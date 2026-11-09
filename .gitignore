@@ -7,3 +7,6 @@ src-tauri/target/
 src-tauri/gen/
 
 .github/scripts/updater-verify/target/
+
+__pycache__/
+*.pyc
