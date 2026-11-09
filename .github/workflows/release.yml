@@ -18,8 +18,9 @@ jobs:
       contents: write
     strategy:
       fail-fast: true
-      # Serialize uploads so updater manifests are merged without races.
-      max-parallel: 1
+      # Serialize release uploads to merge the manifest safely; manual builds
+      # do not write to a release and can run simultaneously.
+      max-parallel: ${{ github.event_name == 'push' && 1 || 4 }}
       matrix:
         include:
           - os: macos-latest
