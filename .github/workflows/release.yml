@@ -1,0 +1,104 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: true
+      # Serialize uploads so updater manifests are merged without races.
+      max-parallel: 1
+      matrix:
+        include:
+          - os: macos-latest
+            args: --target aarch64-apple-darwin
+          - os: macos-latest
+            args: --target x86_64-apple-darwin
+          - os: ubuntu-22.04
+            args: ''
+          - os: windows-latest
+            args: ''
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ runner.os == 'macOS' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+      - name: Validate release configuration
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          for (const key of ['TAURI_SIGNING_PRIVATE_KEY']) {
+            if (!process.env[key]?.trim()) throw new Error(`${key} is not configured`);
+          }
+          const tag = process.env.GITHUB_REF_NAME;
+          const config = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+          if (!config.plugins?.updater?.pubkey?.trim()) throw new Error('Updater public key is missing');
+          const version = config.version;
+          const npmVersion = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
+          if (!/^v\d+\.\d+\.\d+$/.test(tag) || tag !== `v${version}` || version !== npmVersion) {
+            throw new Error('Tag must be vMAJOR.MINOR.PATCH and match Tauri and package versions');
+          }
+          fs.writeFileSync('release.conf.json', JSON.stringify({bundle: {createUpdaterArtifacts: true}}));
+          NODE
+      - run: npm ci
+      - name: Build and upload signed artifacts to draft release
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: Auto Clicker ${{ github.ref_name }}
+          releaseBody: See the assets below for platform downloads.
+          releaseDraft: true
+          prerelease: false
+          args: --config "${{ github.workspace }}/release.conf.json" ${{ matrix.args }}
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Validate updater metadata and publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release download "$GITHUB_REF_NAME" --pattern latest.json --dir "$RUNNER_TEMP"
+          node - "$RUNNER_TEMP/latest.json" <<'NODE'
+          const fs = require('fs');
+          const data = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          if (data.version !== process.env.GITHUB_REF_NAME.slice(1)) throw new Error('Updater version does not match tag');
+          for (const key of ['darwin-aarch64', 'darwin-x86_64', 'linux-x86_64', 'windows-x86_64']) {
+            const item = data.platforms?.[key];
+            if (!item?.signature || !item?.url?.startsWith('https://')) throw new Error(`Missing signed updater artifact for ${key}`);
+          }
+          NODE
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest
