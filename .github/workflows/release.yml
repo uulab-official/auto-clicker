@@ -14,6 +14,9 @@ concurrency:
 
 jobs:
   build:
+    # v0.1.0 is assembled manually from locally notarized macOS artifacts and
+    # CI-built Linux/Windows artifacts. All later tags require CI macOS signing.
+    if: github.event_name != 'push' || github.ref != 'refs/tags/v0.1.0'
     permissions:
       contents: write
     strategy:
@@ -108,10 +111,29 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: Auto Clicker ${{ github.ref_name }}
-          releaseBody: See the assets below for platform downloads.
+          releaseBody: |
+            Download the installer for your platform below.
+
+            **Windows:** This first release is not signed with a Windows publisher certificate. Microsoft Defender SmartScreen or organization policies may warn about or block the installer.
+
+            macOS builds are signed with Developer ID and notarized by Apple. Linux AppImage builds support in-app updates.
           releaseDraft: true
           prerelease: false
           args: --config "${{ github.workspace }}/release.conf.json" ${{ matrix.args }}
+
+      - name: Verify macOS signature and notarization
+        if: github.event_name == 'push' && runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          count=0
+          while IFS= read -r -d '' app; do
+            codesign --verify --deep --strict --verbose=2 "$app"
+            xcrun stapler validate "$app"
+            spctl --assess --type execute --verbose=2 "$app"
+            count=$((count + 1))
+          done < <(find src-tauri/target -path '*/release/bundle/macos/*.app' -type d -prune -print0)
+          if (( count != 1 )); then echo "Expected one notarized macOS app, found $count" >&2; exit 1; fi
 
       - name: Build signed artifacts for verification
         if: github.event_name == 'workflow_dispatch'

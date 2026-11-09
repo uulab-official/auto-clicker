@@ -38,8 +38,10 @@ input permissions and display-server restrictions apply; see below.
   Accessibility when prompted. The operating system may require additional
   permissions depending on the input APIs used. Recheck permissions after
   replacing a development build.
-- **Windows:** Applications running with elevated privileges or protected
-  applications may not accept synthetic input from a normally launched app.
+- **Windows:** The initial release is unsigned. Microsoft Defender SmartScreen
+  may display an unknown publisher warning, and security policies may block it.
+  Applications running with elevated privileges or protected applications may
+  not accept synthetic input from a normally launched app.
 - **Linux:** The initial input and global-shortcut implementation targets X11.
   Wayland support is not guaranteed: desktop environments restrict simulated
   input and global shortcuts in different ways. Use an X11 session if needed.
@@ -106,8 +108,10 @@ code signing and macOS notarization. Tagged macOS builds require GitHub Actions
 secrets `APPLE_CERTIFICATE` (base64 PKCS#12), `APPLE_CERTIFICATE_PASSWORD`,
 `APPLE_SIGNING_IDENTITY`, `APPLE_API_KEY`, `APPLE_API_ISSUER`, and
 `APPLE_API_KEY_P8` (the PEM contents). Without those secrets, manual builds can
-run only as unsigned verification builds. Windows code-signing credentials are
-not configured; its installers are not yet verified for warning-free installation.
+run only as unsigned verification builds. The initial Windows installers are unsigned and may trigger SmartScreen or be
+blocked by security policy. A valid updater signature does not establish Windows
+publisher identity. macOS release artifacts must be checked for Developer ID
+signing and notarization before publication.
 Linux's built-in updater applies to AppImage installations; other Linux package
 formats need their distribution's update mechanism.
 
