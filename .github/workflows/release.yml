@@ -24,12 +24,16 @@ jobs:
       matrix:
         include:
           - os: macos-latest
+            id: macos-arm64
             args: --target aarch64-apple-darwin
           - os: macos-latest
+            id: macos-x64
             args: --target x86_64-apple-darwin
           - os: ubuntu-22.04
+            id: linux-x64
             args: ''
           - os: windows-latest
+            id: windows-x64
             args: ''
     runs-on: ${{ matrix.os }}
     steps:
@@ -118,6 +122,32 @@ jobs:
         with:
           uploadWorkflowArtifacts: true
           args: --config "${{ github.workspace }}/release.conf.json" ${{ matrix.args }}
+
+      - name: Verify locally generated updater signatures
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          set -euo pipefail
+          UPDATER_PUBLIC_KEY="$(node -p "require('./src-tauri/tauri.conf.json').plugins.updater.pubkey")"
+          UPDATER_VERSION="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          export UPDATER_PUBLIC_KEY UPDATER_VERSION
+          count=0
+          while IFS= read -r -d '' signature; do
+            cargo run --quiet --locked --manifest-path .github/scripts/updater-verify/Cargo.toml -- "$signature"
+            count=$((count + 1))
+          done < <(find src-tauri/target -path '*/release/bundle/*' -name '*.sig' -type f -print0)
+          if (( count == 0 )); then echo 'No updater signatures found' >&2; exit 1; fi
+
+      - name: Preserve updater payloads and signatures
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v7
+        with:
+          name: updater-${{ matrix.id }}
+          path: |
+            src-tauri/target/**/release/bundle/**/*.sig
+            src-tauri/target/**/release/bundle/**/*.app.tar.gz
+          if-no-files-found: error
+          compression-level: 0
 
   validate:
     if: github.event_name == 'push'

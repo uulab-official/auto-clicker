@@ -5,3 +5,5 @@ src-tauri/target/
 *.log
 
 src-tauri/gen/
+
+.github/scripts/updater-verify/target/
