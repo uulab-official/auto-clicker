@@ -39,6 +39,9 @@ jobs:
           $tmp = Join-Path $env:RUNNER_TEMP 'auto-clicker-update-test'
           npm run tauri build -- --no-bundle --config "$tmp/baseline.json"
           if ($LASTEXITCODE -ne 0) { throw 'Baseline build failed' }
-      - name: Install published release and exercise signed updater
+      - name: Install published release and start instrumented app
         shell: pwsh
         run: .github/scripts/windows-update-test/run.ps1
+      - name: Verify signed update installed
+        shell: pwsh
+        run: .github/scripts/windows-update-test/verify.ps1
