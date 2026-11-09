@@ -1,0 +1,21 @@
+name: Public Windows update verification
+on:
+  workflow_dispatch:
+    inputs:
+      target_version:
+        description: Expected latest public release version
+        required: true
+        default: '0.1.1'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install public v0.1.0 and apply public update through app UI
+        shell: pwsh
+        env:
+          EXPECTED_UPDATE_VERSION: ${{ inputs.target_version }}
+        run: .github/scripts/public-windows-update/run.ps1
