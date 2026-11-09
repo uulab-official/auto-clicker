@@ -2,6 +2,7 @@
 # Runs only on an isolated GitHub macOS runner, never on the user's desktop.
 set -euo pipefail
 work="$(mktemp -d)"
+work="$(cd "$work" && pwd -P)" # updater rejects symlinked /var paths on macOS
 app_pid=''
 server_pid=''
 cleanup() {
