@@ -84,12 +84,14 @@ Signing and distribution credentials are not included in this repository.
 
 ## Release and updates
 
-The release workflow runs only when a `vMAJOR.MINOR.PATCH` tag is pushed. The
-version in the tag, `package.json`, and `src-tauri/tauri.conf.json` must match.
-It builds macOS Apple Silicon and Intel, Linux x86-64, and Windows x86-64 bundles,
-signs updater artifacts, and assembles `latest.json` on a draft GitHub Release.
-The workflow publishes the release only after all builds and metadata checks
-succeed. A failed workflow can leave a draft release for investigation.
+The release workflow can be run manually for signed updater artifact builds
+without creating a release. On a `vMAJOR.MINOR.PATCH` tag, the version in the
+tag, `package.json`, and `src-tauri/tauri.conf.json` must match. It builds macOS
+Apple Silicon and Intel, Linux x86-64, and Windows x86-64 bundles, signs the
+updater artifacts, and assembles `latest.json` on a draft GitHub Release. It
+checks the version and signature of each updater artifact, but **never publishes
+the draft automatically**. Maintainers must verify platform signing and
+installation before publishing. A failed workflow can leave a draft for review.
 
 Repository maintainers must configure the GitHub Actions secrets
 `TAURI_SIGNING_PRIVATE_KEY` (the full private key contents) and, if the key is
@@ -100,8 +102,14 @@ installed apps. The first update check will fail until a signed release is
 published; verify updates from an installed, signed build on each platform.
 
 Updater signatures authenticate updates; they are separate from operating-system
-code signing and macOS notarization. Those credentials and release steps are not
-configured by this workflow, so downloads may encounter OS security warnings.
+code signing and macOS notarization. Tagged macOS builds require GitHub Actions
+secrets `APPLE_CERTIFICATE` (base64 PKCS#12), `APPLE_CERTIFICATE_PASSWORD`,
+`APPLE_SIGNING_IDENTITY`, `APPLE_API_KEY`, `APPLE_API_ISSUER`, and
+`APPLE_API_KEY_P8` (the PEM contents). Without those secrets, manual builds can
+run only as unsigned verification builds. Windows code-signing credentials are
+not configured; its installers are not yet verified for warning-free installation.
+Linux's built-in updater applies to AppImage installations; other Linux package
+formats need their distribution's update mechanism.
 
 ## Contributing and license
 

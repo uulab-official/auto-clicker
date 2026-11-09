@@ -3,6 +3,7 @@ name: Release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -31,8 +32,8 @@ jobs:
             args: ''
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
@@ -59,13 +60,41 @@ jobs:
           if (!config.plugins?.updater?.pubkey?.trim()) throw new Error('Updater public key is missing');
           const version = config.version;
           const npmVersion = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
-          if (!/^v\d+\.\d+\.\d+$/.test(tag) || tag !== `v${version}` || version !== npmVersion) {
-            throw new Error('Tag must be vMAJOR.MINOR.PATCH and match Tauri and package versions');
+          if (version !== npmVersion || (process.env.GITHUB_EVENT_NAME === 'push' &&
+              (!/^v\d+\.\d+\.\d+$/.test(tag) || tag !== `v${version}`))) {
+            throw new Error('Versions must match; release tags must be vMAJOR.MINOR.PATCH');
           }
           fs.writeFileSync('release.conf.json', JSON.stringify({bundle: {createUpdaterArtifacts: true}}));
           NODE
       - run: npm ci
+      - name: Prepare macOS signing and notarization
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ runner.os == 'macOS' && secrets.APPLE_CERTIFICATE || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_API_KEY: ${{ runner.os == 'macOS' && secrets.APPLE_API_KEY || '' }}
+          APPLE_API_ISSUER: ${{ runner.os == 'macOS' && secrets.APPLE_API_ISSUER || '' }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$APPLE_CERTIFICATE" && "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo '::warning::macOS signing credentials are absent; this is an unsigned verification build.'
+            exit 0
+          fi
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_API_KEY APPLE_API_ISSUER APPLE_API_KEY_P8; do
+            if [[ -z "${!name}" ]]; then echo "Missing signing secret: $name" >&2; exit 1; fi
+          done
+          umask 077
+          printf '%s' "$APPLE_API_KEY_P8" > "$RUNNER_TEMP/apple-notary-key.p8"
+          echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/apple-notary-key.p8" >> "$GITHUB_ENV"
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_API_KEY APPLE_API_ISSUER; do
+            delimiter="SECRET_$(uuidgen)"
+            printf '%s<<%s\n%s\n%s\n' "$name" "$delimiter" "${!name}" "$delimiter" >> "$GITHUB_ENV"
+          done
       - name: Build and upload signed artifacts to draft release
+        if: github.event_name == 'push'
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -79,26 +108,31 @@ jobs:
           prerelease: false
           args: --config "${{ github.workspace }}/release.conf.json" ${{ matrix.args }}
 
-  publish:
+      - name: Build signed artifacts for verification
+        if: github.event_name == 'workflow_dispatch'
+        uses: tauri-apps/tauri-action@v1
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          uploadWorkflowArtifacts: true
+          args: --config "${{ github.workspace }}/release.conf.json" ${{ matrix.args }}
+
+  validate:
+    if: github.event_name == 'push'
     needs: build
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
-      - name: Validate updater metadata and publish
+      - uses: actions/checkout@v7
+      - name: Install signature verifier
+        run: sudo apt-get update && sudo apt-get install -y minisign
+      - name: Verify updater metadata and signatures (release remains a draft)
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
           gh release download "$GITHUB_REF_NAME" --pattern latest.json --dir "$RUNNER_TEMP"
-          node - "$RUNNER_TEMP/latest.json" <<'NODE'
-          const fs = require('fs');
-          const data = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-          if (data.version !== process.env.GITHUB_REF_NAME.slice(1)) throw new Error('Updater version does not match tag');
-          for (const key of ['darwin-aarch64', 'darwin-x86_64', 'linux-x86_64', 'windows-x86_64']) {
-            const item = data.platforms?.[key];
-            if (!item?.signature || !item?.url?.startsWith('https://')) throw new Error(`Missing signed updater artifact for ${key}`);
-          }
-          NODE
-          gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+          python3 .github/scripts/verify-release.py "$RUNNER_TEMP/latest.json"
