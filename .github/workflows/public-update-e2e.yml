@@ -1,0 +1,24 @@
+name: Public release update verification
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install isolated desktop dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-0 libxdo3 libayatana-appindicator3-1 libfuse2 xvfb xdotool dbus-x11 at-spi2-core python3-pyatspi libatk-adaptor
+      - name: Update actual published AppImage
+        run: xvfb-run -a -s '-screen 0 1280x1024x24' dbus-run-session -- bash .github/scripts/public-update-e2e/linux.sh
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Update actual published macOS app
+        run: bash .github/scripts/public-update-e2e/macos.sh
