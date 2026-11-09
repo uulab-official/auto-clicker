@@ -6,6 +6,11 @@ on:
         description: Expected latest public release version
         required: true
         default: '0.1.1'
+      probe_only:
+        description: Inspect the original app UI without applying an update
+        required: true
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -18,4 +23,5 @@ jobs:
         shell: pwsh
         env:
           EXPECTED_UPDATE_VERSION: ${{ inputs.target_version }}
+          PROBE_ONLY: ${{ inputs.probe_only }}
         run: .github/scripts/public-windows-update/run.ps1
