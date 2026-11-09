@@ -10,8 +10,16 @@ $server = Start-Process python -ArgumentList '-m','http.server','18173','--bind'
 try {
   $url = 'https://github.com/uulab-official/auto-clicker/releases/download/v0.1.0/Auto-Clicker_0.1.0_x64.msi'
   Invoke-WebRequest $url -OutFile "$tmp/published.msi"
-  $p = Start-Process msiexec.exe -ArgumentList '/i',"`"$tmp/published.msi`"",'/qn','/norestart' -Wait -PassThru
-  if ($p.ExitCode -ne 0) { throw "Published MSI install failed: $($p.ExitCode)" }
+  $file = Get-Item "$tmp/published.msi"
+  $header = ([System.BitConverter]::ToString([System.IO.File]::ReadAllBytes($file.FullName)[0..7]))
+  Write-Host "Downloaded MSI size: $($file.Length); header: $header; SHA256: $((Get-FileHash $file.FullName -Algorithm SHA256).Hash)"
+  if ($header -ne 'D0-CF-11-E0-A1-B1-1A-E1') { throw 'Downloaded file is not a valid MSI compound file' }
+  $logPath = Join-Path $tmp 'msi-install.log'
+  $p = Start-Process msiexec.exe -ArgumentList '/i',"`"$($file.FullName)`"",'/qn','/norestart','/L*V',"`"$logPath`"" -Wait -PassThru
+  if ($p.ExitCode -ne 0) {
+    if (Test-Path $logPath) { Get-Content $logPath | Write-Host }
+    throw "Published MSI install failed: $($p.ExitCode)"
+  }
   $locations = @("$env:ProgramFiles\Auto Clicker", "${env:ProgramFiles(x86)}\Auto Clicker", "$env:LOCALAPPDATA\Programs\Auto Clicker")
   $exe = $null
   foreach ($location in $locations) {

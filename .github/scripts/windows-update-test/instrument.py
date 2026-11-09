@@ -6,7 +6,7 @@ source = backend.read_text()
 needle = '            install_update\n'
 assert source.count(needle) == 1, 'unexpected command handler layout'
 source = source.replace(needle, '            install_update,\n            ci_test_log\n')
-source += '''\n#[tauri::command]\nfn ci_test_log(message: String) {\n    use std::io::Write;\n    let path = std::env::temp_dir().join("auto-clicker-update-test").join("events.log");\n    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {\n        let _ = writeln!(f, "{}", message);\n    }\n}\n'''
+source += '''\n#[tauri::command]\nfn ci_test_log(message: String) {\n    use std::io::Write;\n    let path = std::path::PathBuf::from(std::env::var_os("RUNNER_TEMP").unwrap_or_else(|| std::env::temp_dir().into_os_string())).join("auto-clicker-update-test").join("events.log");\n    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {\n        let _ = writeln!(f, "{}", message);\n    }\n}\n'''
 backend.write_text(source)
 frontend = Path('src/main.ts')
 with frontend.open('a') as f:
