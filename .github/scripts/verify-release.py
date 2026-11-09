@@ -19,7 +19,14 @@ def main():
     manifest = json.loads(Path(sys.argv[1]).read_text())
     if manifest['version'] != tag[1:] or config['version'] != tag[1:]:
         raise ValueError('Updater, app and tag versions must match')
-    release = json.loads(subprocess.check_output(['gh', 'api', f'repos/{repository}/releases/tags/{tag}']))
+    # GitHub's releases/tags endpoint does not resolve unpublished drafts.
+    # Resolve the draft with gh, then retrieve its assets by release ID.
+    release_id = json.loads(subprocess.check_output([
+        'gh', 'release', 'view', tag, '--repo', repository, '--json', 'databaseId'
+    ]))['databaseId']
+    release = json.loads(subprocess.check_output([
+        'gh', 'api', f'repos/{repository}/releases/{release_id}'
+    ]))
     if not release.get('draft'):
         raise ValueError('Release must remain a draft during verification')
     asset_ids = {a['id'] for a in release['assets']}
