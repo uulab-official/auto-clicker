@@ -1,0 +1,28 @@
+name: Windows published MSI diagnostic
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download and install released MSI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = Join-Path $env:RUNNER_TEMP 'auto-clicker-published.msi'
+          $log = Join-Path $env:RUNNER_TEMP 'auto-clicker-install.log'
+          Invoke-WebRequest 'https://github.com/uulab-official/auto-clicker/releases/download/v0.1.0/Auto-Clicker_0.1.0_x64.msi' -OutFile $path
+          $file = Get-Item $path
+          $header = [System.BitConverter]::ToString([System.IO.File]::ReadAllBytes($file.FullName)[0..7])
+          Write-Host "MSI bytes=$($file.Length) header=$header sha256=$((Get-FileHash $file.FullName -Algorithm SHA256).Hash)"
+          if ($header -ne 'D0-CF-11-E0-A1-B1-1A-E1') { throw 'Downloaded file is not an MSI' }
+          $p = Start-Process msiexec.exe -ArgumentList '/i',"`"$($file.FullName)`"",'/qn','/norestart','/L*V',"`"$log`"" -Wait -PassThru
+          if (Test-Path $log) { Get-Content $log | Write-Host }
+          if ($p.ExitCode -ne 0) { throw "msiexec failed: $($p.ExitCode)" }
+          Write-Host 'Published Windows MSI installation succeeded.'
