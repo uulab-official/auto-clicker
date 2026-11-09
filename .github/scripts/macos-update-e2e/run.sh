@@ -35,16 +35,35 @@ if ! kill -0 "$app_pid" 2>/dev/null; then cat "$work/public.log"; echo 'Publishe
 echo 'Published notarized 0.1.0 installed and started in isolated runner'
 kill "$app_pid"; wait "$app_pid" 2>/dev/null || true
 app_pid=''
-# The following fixtures use an ephemeral key and loopback endpoint. Only this
-# disposable checkout gets a synthetic click on the update install button.
-cat >> src/main.ts <<'JS'
-{
-  const timer = window.setInterval(() => {
-    const button = document.querySelector<HTMLButtonElement>('button[data-action="install-update"]');
-    if (button && !button.disabled) { window.clearInterval(timer); button.click(); }
-  }, 250);
-}
-JS
+# Hosted macOS runners can launch the process but do not guarantee a usable
+# WindowServer/WebView. In this disposable checkout, invoke the real Tauri
+# commands directly; this verifies backend update behavior, not UI interaction.
+python3 - <<'PYCODE'
+from pathlib import Path
+path = Path('src-tauri/src/lib.rs')
+source = path.read_text()
+marker = '        .setup(|app| {\n'
+assert source.count(marker) == 1
+fixture = """        .setup(|app| {
+            if std::env::var_os("AUTOCLICKER_UPDATE_FIXTURE").is_some() {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    match check_update(handle.clone(), handle.state::<PendingUpdate>()).await {
+                        Ok(Some(info)) => {
+                            eprintln!("fixture: update {} available", info.version);
+                            match install_update(handle.clone(), handle.state::<PendingUpdate>()).await {
+                                Ok(()) => eprintln!("fixture: update installed"),
+                                Err(error) => eprintln!("fixture: installation failed: {error}"),
+                            }
+                        }
+                        Ok(None) => eprintln!("fixture: no update available"),
+                        Err(error) => eprintln!("fixture: update check failed: {error}"),
+                    }
+                });
+            }
+"""
+path.write_text(source.replace(marker, fixture))
+PYCODE
 ./node_modules/.bin/tauri signer generate --ci -p 'fixture-only' -w "$work/key" >/dev/null
 export TAURI_SIGNING_PRIVATE_KEY="$(cat "$work/key")" TAURI_SIGNING_PRIVATE_KEY_PASSWORD='fixture-only' VITE_UPDATE_E2E=1
 export FIXTURE_PUBLIC_KEY="$(cat "$work/key.pub")" FIXTURE_DIR="$work" MAC_ARCH="$mac_arch"
@@ -75,7 +94,7 @@ ditto 'src-tauri/target/release/bundle/macos/Auto Clicker.app' "$work/install/Fi
 python3 -m http.server 18792 --bind 127.0.0.1 --directory "$work/server" >"$work/server.log" 2>&1 &
 server_pid=$!
 for _ in $(seq 1 30); do curl --silent --fail http://127.0.0.1:18792/latest.json >/dev/null && break; sleep 1; done
-"$work/install/Fixture.app/Contents/MacOS/auto-clicker" >"$work/fixture.log" 2>&1 &
+AUTOCLICKER_UPDATE_FIXTURE=1 "$work/install/Fixture.app/Contents/MacOS/auto-clicker" >"$work/fixture.log" 2>&1 &
 app_pid=$!
 updated=0
 for _ in $(seq 1 120); do
@@ -86,7 +105,9 @@ for _ in $(seq 1 120); do
 done
 if [[ "$updated" != 1 ]]; then cat "$work/fixture.log"; cat "$work/server.log"; echo 'Installed app did not update' >&2; exit 1; fi
 grep -q 'GET /candidate.tar.gz' "$work/server.log"
-echo 'Fixture 0.1.1 updated in place to signed 0.1.2 app'
+for _ in $(seq 1 10); do grep -q 'fixture: update installed' "$work/fixture.log" && break; sleep 1; done
+grep -q 'fixture: update installed' "$work/fixture.log"
+echo 'Fixture 0.1.1 updated in place to signed 0.1.2 app using Tauri commands (UI not tested)'
 kill "$app_pid" 2>/dev/null || true; wait "$app_pid" 2>/dev/null || true
 app_pid=''
 "$work/install/Fixture.app/Contents/MacOS/auto-clicker" >"$work/relaunch.log" 2>&1 &
