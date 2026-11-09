@@ -30,4 +30,5 @@ Write-Host "Published MSI installed executable: $($exe.FullName)"
 Set-Content "$tmp/installed-path.txt" $exe.FullName
 Copy-Item "$root/src-tauri/target/release/auto-clicker.exe" $exe.FullName -Force
 Start-Process $exe.FullName | Out-Null
-Write-Host 'Launched test-instrumented installed app; verification continues in the next step.'
+Write-Host 'Launched test-instrumented installed app; waiting for update in the same step.'
+& .github/scripts/windows-update-test/verify.ps1

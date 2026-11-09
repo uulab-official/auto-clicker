@@ -42,6 +42,3 @@ jobs:
       - name: Install published release and start instrumented app
         shell: pwsh
         run: .github/scripts/windows-update-test/run.ps1
-      - name: Verify signed update installed
-        shell: pwsh
-        run: .github/scripts/windows-update-test/verify.ps1
