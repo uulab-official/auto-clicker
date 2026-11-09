@@ -27,6 +27,17 @@ foreach ($location in $locations) {
 }
 if (-not $exe) { throw 'Installed executable not found' }
 Write-Host "Published MSI installed executable: $($exe.FullName)"
+# WiX can modify executable resources during bundling; compare against the
+# binary extracted from the exact signed candidate MSI, not the pre-bundle exe.
+$extractDir = Join-Path $tmp 'candidate-extracted'
+New-Item -ItemType Directory -Force $extractDir | Out-Null
+$updateMsi = (Get-Item "$tmp/update.msi").FullName
+$extractLog = Join-Path $tmp 'msi-extract.log'
+$extract = Start-Process msiexec.exe -ArgumentList '/a',"`"$updateMsi`"",'/qn',"TARGETDIR=`"$extractDir`"",'/L*V',"`"$extractLog`"" -Wait -PassThru
+if ($extract.ExitCode -ne 0) { if (Test-Path $extractLog) { Get-Content $extractLog | Write-Host }; throw "Candidate MSI extraction failed: $($extract.ExitCode)" }
+$payload = Get-ChildItem $extractDir -Filter 'auto-clicker.exe' -Recurse | Select-Object -First 1
+if (-not $payload) { throw 'Candidate MSI does not contain auto-clicker.exe' }
+Set-Content "$tmp/payload-sha256.txt" (Get-FileHash $payload.FullName -Algorithm SHA256).Hash
 Set-Content "$tmp/installed-path.txt" $exe.FullName
 Copy-Item "$root/src-tauri/target/release/auto-clicker.exe" $exe.FullName -Force
 Start-Process $exe.FullName | Out-Null
