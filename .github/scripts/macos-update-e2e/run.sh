@@ -38,7 +38,7 @@ app_pid=''
 # The following fixtures use an ephemeral key and loopback endpoint. Only this
 # disposable checkout gets a synthetic click on the update install button.
 cat >> src/main.ts <<'JS'
-if (import.meta.env.VITE_UPDATE_E2E === '1') {
+{
   const timer = window.setInterval(() => {
     const button = document.querySelector<HTMLButtonElement>('button[data-action="install-update"]');
     if (button && !button.disabled) { window.clearInterval(timer); button.click(); }
