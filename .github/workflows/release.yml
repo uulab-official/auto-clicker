@@ -121,8 +121,20 @@ jobs:
           prerelease: false
           args: --config "${{ github.workspace }}/release.conf.json" ${{ matrix.args }}
 
-      - name: Verify macOS signature and notarization
-        if: github.event_name == 'push' && runner.os == 'macOS'
+      - name: Build signed artifacts for verification
+        if: github.event_name == 'workflow_dispatch'
+        uses: tauri-apps/tauri-action@v1
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          # A signed DMG is not necessarily notarized. Upload macOS artifacts
+          # only after the separate disk-image notarization step below.
+          uploadWorkflowArtifacts: ${{ runner.os != 'macOS' || env.APPLE_API_KEY_PATH == '' }}
+          args: --config "${{ github.workspace }}/release.conf.json" ${{ matrix.args }}
+
+      - name: Verify macOS app signature and notarization
+        if: runner.os == 'macOS' && env.APPLE_API_KEY_PATH != ''
         shell: bash
         run: |
           set -euo pipefail
@@ -135,15 +147,41 @@ jobs:
           done < <(find src-tauri/target -path '*/release/bundle/macos/*.app' -type d -prune -print0)
           if (( count != 1 )); then echo "Expected one notarized macOS app, found $count" >&2; exit 1; fi
 
-      - name: Build signed artifacts for verification
-        if: github.event_name == 'workflow_dispatch'
-        uses: tauri-apps/tauri-action@v1
+      - name: Notarize and verify macOS disk image
+        if: runner.os == 'macOS' && env.APPLE_API_KEY_PATH != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          count=0
+          while IFS= read -r -d '' dmg; do
+            bash .github/scripts/notarize-dmg.sh "$dmg"
+            count=$((count + 1))
+          done < <(find src-tauri/target -path '*/release/bundle/dmg/*.dmg' -type f -print0)
+          if (( count != 1 )); then echo "Expected one notarized macOS DMG, found $count" >&2; exit 1; fi
+
+      - name: Replace draft macOS disk image with notarized asset
+        if: github.event_name == 'push' && runner.os == 'macOS'
+        shell: bash
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)" != true ]]; then
+            echo 'Refusing to modify a release that is not a draft.' >&2
+            exit 1
+          fi
+          while IFS= read -r -d '' dmg; do
+            gh release upload "$GITHUB_REF_NAME" "$dmg" --clobber
+          done < <(find src-tauri/target -path '*/release/bundle/dmg/*.dmg' -type f -print0)
+
+      - name: Preserve notarized macOS disk image
+        if: github.event_name == 'workflow_dispatch' && runner.os == 'macOS' && env.APPLE_API_KEY_PATH != ''
+        uses: actions/upload-artifact@v7
         with:
-          uploadWorkflowArtifacts: true
-          args: --config "${{ github.workspace }}/release.conf.json" ${{ matrix.args }}
+          name: notarized-${{ matrix.id }}
+          path: src-tauri/target/**/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+          compression-level: 0
 
       - name: Verify locally generated updater signatures
         if: github.event_name == 'workflow_dispatch'
