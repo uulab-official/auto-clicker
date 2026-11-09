@@ -15,7 +15,7 @@ def main():
     tag = os.environ['GITHUB_REF_NAME']
     if not re.fullmatch(r'v\d+\.\d+\.\d+', tag):
         raise ValueError('A stable version tag is required')
-    config = json.loads(Path('src-tauri/tauri.conf.json').read_text())
+    config = json.loads(Path(os.environ.get('RELEASE_CONFIG_PATH', 'src-tauri/tauri.conf.json')).read_text())
     manifest = json.loads(Path(sys.argv[1]).read_text())
     if manifest['version'] != tag[1:] or config['version'] != tag[1:]:
         raise ValueError('Updater, app and tag versions must match')
@@ -34,8 +34,11 @@ def main():
     url_pattern = re.compile(rf'https://api\.github\.com/repos/{re.escape(repository)}/releases/assets/(\d+)')
     with tempfile.TemporaryDirectory(prefix='verify-updater-') as tmp:
         tmp = Path(tmp)
-        key = tmp / 'updater.pub'
-        key.write_bytes(base64.b64decode(config['plugins']['updater']['pubkey'], validate=True))
+        public_key = config['plugins']['updater']['pubkey']
+        base64.b64decode(public_key, validate=True)
+        verifier = Path('.github/scripts/updater-verify/target/debug/updater-verify').resolve()
+        if not verifier.is_file():
+            raise ValueError('Build the updater verifier before verifying the release')
         for platform in expected:
             artifact = manifest['platforms'][platform]
             match = url_pattern.fullmatch(artifact['url'])
@@ -47,10 +50,11 @@ def main():
                 raise ValueError(f'{platform}: signature is not bound to the release version')
             signature = tmp / f'{platform}.sig'
             binary = tmp / platform
-            signature.write_text(sig_text)
+            signature.write_text(artifact['signature'].strip())
             with binary.open('wb') as output:
                 subprocess.run(['gh', 'api', '-H', 'Accept: application/octet-stream', artifact['url']], stdout=output, check=True)
-            subprocess.run(['minisign', '-V', '-p', str(key), '-m', str(binary), '-x', str(signature)], check=True)
+            verifier_env = dict(os.environ, UPDATER_PUBLIC_KEY=public_key, UPDATER_VERSION=manifest['version'])
+            subprocess.run([str(verifier), str(signature)], env=verifier_env, check=True)
             print(f'{platform}: signature and version verified', flush=True)
 
 

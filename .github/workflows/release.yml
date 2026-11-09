@@ -218,8 +218,9 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
-      - name: Install signature verifier
-        run: sudo apt-get update && sudo apt-get install -y minisign
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build signature verifier
+        run: cargo build --locked --manifest-path .github/scripts/updater-verify/Cargo.toml
       - name: Verify updater metadata and signatures (release remains a draft)
         shell: bash
         env:

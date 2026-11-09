@@ -21,15 +21,19 @@ jobs:
             exit 1
           fi
       - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.tag }}
-      - name: Install signature verifier
-        run: sudo apt-get update && sudo apt-get install -y minisign
+          path: release-source
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build signature verifier
+        run: cargo build --locked --manifest-path .github/scripts/updater-verify/Cargo.toml
       - name: Verify updater metadata and signatures (release remains a draft)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_CONFIG_PATH: release-source/src-tauri/tauri.conf.json
         run: |
           gh release download "$RELEASE_TAG" --pattern latest.json --dir "$RUNNER_TEMP"
           GITHUB_REF_NAME="$RELEASE_TAG" python3 .github/scripts/verify-release.py "$RUNNER_TEMP/latest.json"
