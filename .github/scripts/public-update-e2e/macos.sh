@@ -16,6 +16,7 @@ case "$(uname -m)" in
   x86_64) download_arch=x64; platform=darwin-x86_64 ;;
   *) echo 'Unsupported runner architecture' >&2; exit 1 ;;
 esac
+if [[ "${PUBLIC_UPDATE_PROBE_ONLY:-0}" != 1 ]]; then
 curl --fail --location --silent --show-error -o "$work/latest.json" 'https://github.com/uulab-official/auto-clicker/releases/latest/download/latest.json'
 python3 - "$work/latest.json" "$work/target.url" "$platform" <<'PY'
 import json, pathlib, sys
@@ -28,6 +29,7 @@ tar -xzf "$work/update.tar.gz" -C "$work/expected"
 expected_app="$(find "$work/expected" -maxdepth 1 -type d -name '*.app' -print -quit)"
 [[ -n "$expected_app" ]] || { echo 'Published update app missing from archive' >&2; exit 1; }
 expected_hash=$(shasum -a 256 "$expected_app/Contents/MacOS/auto-clicker" | awk '{print $1}')
+fi
 curl --fail --location --silent --show-error -o "$work/public.dmg" "https://github.com/uulab-official/auto-clicker/releases/download/v0.1.0/Auto-Clicker_0.1.0_${download_arch}.dmg"
 codesign --verify --strict "$work/public.dmg"
 xcrun stapler validate "$work/public.dmg"
@@ -41,6 +43,11 @@ app="$work/install/Auto Clicker.app"
 sleep 8
 kill -0 "$app_pid" 2>/dev/null || { cat "$work/app.log"; echo 'Original application did not start' >&2; exit 1; }
 swiftc .github/scripts/public-update-e2e/mac-press.swift -o "$work/press"
+if [[ "${PUBLIC_UPDATE_PROBE_ONLY:-0}" == 1 ]]; then
+  "$work/press" "$app_pid" probe
+  echo 'Accessibility probe passed; no application action was invoked'
+  exit 0
+fi
 "$work/press" "$app_pid"
 updated=0
 for _ in $(seq 1 180); do

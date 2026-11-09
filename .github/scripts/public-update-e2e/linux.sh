@@ -11,6 +11,7 @@ trap cleanup EXIT
 mkdir -p "$work/install" "$work/config" "$work/data" "$work/cache"
 export XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_CACHE_HOME="$work/cache"
 export APPIMAGE_EXTRACT_AND_RUN=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 GDK_BACKEND=x11 LANG=C.UTF-8 NO_AT_BRIDGE=0 GTK_MODULES=atk-bridge
+if [[ "${PUBLIC_UPDATE_PROBE_ONLY:-0}" != 1 ]]; then
 curl --fail --location --silent --show-error -o "$work/latest.json" 'https://github.com/uulab-official/auto-clicker/releases/latest/download/latest.json'
 python3 - "$work/latest.json" "$work/target.url" <<'PY'
 import json, pathlib, sys
@@ -19,11 +20,14 @@ if m['version'] != '0.1.1': raise SystemExit('Latest public release is not 0.1.1
 pathlib.Path(sys.argv[2]).write_text(m['platforms']['linux-x86_64']['url'])
 PY
 curl --fail --location --silent --show-error -H 'Accept: application/octet-stream' -H 'User-Agent: auto-clicker-release-verification' -o "$work/expected.AppImage" "$(cat "$work/target.url")"
+fi
 curl --fail --location --silent --show-error -o "$work/install/Auto Clicker.AppImage" 'https://github.com/uulab-official/auto-clicker/releases/download/v0.1.0/Auto-Clicker_0.1.0_amd64.AppImage'
 chmod +x "$work/install/Auto Clicker.AppImage"
+if [[ "${PUBLIC_UPDATE_PROBE_ONLY:-0}" != 1 ]]; then
 base_hash=$(sha256sum "$work/install/Auto Clicker.AppImage" | awk '{print $1}')
 expected_hash=$(sha256sum "$work/expected.AppImage" | awk '{print $1}')
 [[ "$base_hash" != "$expected_hash" ]] || { echo 'Baseline and update must differ' >&2; exit 1; }
+fi
 setsid "$work/install/Auto Clicker.AppImage" >"$work/app.log" 2>&1 &
 app_pid=$!
 window=''
@@ -36,6 +40,11 @@ done
 [[ -n "$window" ]] || { cat "$work/app.log"; echo 'Published application did not open' >&2; exit 1; }
 app_window_pid=$(xdotool getwindowpid "$window")
 echo "Published 0.1.0 started, target PID: $app_window_pid"
+if [[ "${PUBLIC_UPDATE_PROBE_ONLY:-0}" == 1 ]]; then
+  /usr/bin/python3 .github/scripts/public-update-e2e/linux-press.py "$app_window_pid" probe
+  echo 'Accessibility probe passed; no application action was invoked'
+  exit 0
+fi
 /usr/bin/python3 .github/scripts/public-update-e2e/linux-press.py "$app_window_pid"
 updated=0
 for _ in $(seq 1 180); do

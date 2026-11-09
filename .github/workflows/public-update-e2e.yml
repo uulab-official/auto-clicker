@@ -1,8 +1,15 @@
 name: Public release update verification
 on:
   workflow_dispatch:
+    inputs:
+      probe_only:
+        description: Test accessibility of the original application without starting an update
+        type: boolean
+        default: false
 permissions:
   contents: read
+env:
+  PUBLIC_UPDATE_PROBE_ONLY: ${{ inputs.probe_only && '1' || '0' }}
 jobs:
   linux:
     runs-on: ubuntu-22.04

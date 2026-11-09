@@ -3,8 +3,9 @@ import ApplicationServices
 
 // AXPress is delivered to an element of this specific app process, not to the
 // desktop pointer or keyboard. The caller must already be trusted by macOS.
-let names = Set(["Install update", "업데이트 설치", "アップデートをインストール"])
-guard CommandLine.arguments.count == 2, let pid = Int32(CommandLine.arguments[1]) else {
+let probe = CommandLine.arguments.count > 2 && CommandLine.arguments[2] == "probe"
+let names = probe ? Set(["Start clicking", "클릭 시작", "クリックを開始"]) : Set(["Install update", "업데이트 설치", "アップデートをインストール"])
+guard CommandLine.arguments.count >= 2, let pid = Int32(CommandLine.arguments[1]) else {
     fputs("Expected application PID\n", stderr); exit(2)
 }
 guard AXIsProcessTrusted() else {
@@ -24,6 +25,7 @@ func scan(_ item: AXUIElement, _ depth: Int) -> Bool {
     if role == "AXButton" {
         seen.insert(title + " | " + description)
         if names.contains(title) || names.contains(description) {
+            if probe { print("Target application button accessible: \(title) \(description)"); return true }
             if AXUIElementPerformAction(item, kAXPressAction as CFString) == .success {
                 print("Invoked update button in app PID \(pid): \(title) \(description)")
                 return true

@@ -5,7 +5,9 @@ import time
 import pyatspi
 
 pid = int(sys.argv[1])
-names = {'Install update', '업데이트 설치', 'アップデートをインストール'}
+probe = len(sys.argv) > 2 and sys.argv[2] == 'probe'
+names = ({'Start clicking', '클릭 시작', 'クリックを開始'} if probe else
+         {'Install update', '업데이트 설치', 'アップデートをインストール'})
 seen = set()
 
 def walk(node, depth=0):
@@ -17,6 +19,9 @@ def walk(node, depth=0):
         if role in ('push button', 'button'):
             seen.add(name)
             if name in names and node.getState().contains(pyatspi.STATE_SENSITIVE):
+                if probe:
+                    print('Target application button accessible:', name, flush=True)
+                    return True
                 action = node.queryAction()
                 for index in range(action.nActions):
                     if action.getName(index).lower() in ('click', 'press', 'activate'):
