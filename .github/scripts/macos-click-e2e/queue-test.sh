@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Runs only in a disposable GitHub macOS VM; all input remains inside that VM.
+set -euo pipefail
+[[ "${GITHUB_ACTIONS:-}" == true && "${CI:-}" == true && "${RUNNER_ENVIRONMENT:-}" == github-hosted ]] || { echo 'Requires disposable GitHub-hosted runner' >&2; exit 1; }
+work=$(mktemp -d)
+app_pid='' target_pid=''
+cleanup() {
+  [[ -z "$app_pid" ]] || kill "$app_pid" 2>/dev/null || true
+  [[ -z "$target_pid" ]] || kill "$target_pid" 2>/dev/null || true
+  rm -rf "$work"
+}
+trap cleanup EXIT
+clang -dynamiclib -fblocks -framework Carbon -framework CoreFoundation .github/scripts/macos-click-e2e/queue-hotkey.c -o "$work/interposer.dylib"
+swiftc .github/scripts/macos-click-e2e/target.swift -o "$work/target"
+swiftc .github/scripts/macos-click-e2e/control.swift -o "$work/control"
+"$work/target" "$work/events" >"$work/target.log" 2>&1 & target_pid=$!
+DYLD_INSERT_LIBRARIES="$work/interposer.dylib" AUTOCLICKER_QUEUE_TEST_SIGNAL="$work/signal" src-tauri/target/release/auto-clicker >"$work/app.log" 2>&1 & app_pid=$!
+for _ in $(seq 1 60); do
+  [[ -s "$work/events" ]] && grep -q 'queue-test: observed F8 registration' "$work/app.log" && break
+  kill -0 "$target_pid" && kill -0 "$app_pid" || { cat "$work/target.log" "$work/app.log"; exit 1; }
+  sleep 1
+done
+if ! grep -q 'queue-test: observed F8 registration' "$work/app.log"; then cat "$work/app.log"; echo 'Test interposer did not observe the app registering its shortcut' >&2; exit 1; fi
+read -r label x y < "$work/events"
+[[ "$label" == point ]] || { echo 'Target did not start' >&2; exit 1; }
+"$work/control" move "$x" "$y"
+"$work/control" start "$app_pid"
+count=0
+for _ in $(seq 1 20); do
+  count=$(grep -c '^click ' "$work/events" || true)
+  (( count >= 2 )) && break
+  sleep 1
+done
+(( count >= 2 )) || { cat "$work/app.log" "$work/events"; echo 'App failed to click test target' >&2; exit 1; }
+touch "$work/signal"
+for _ in $(seq 1 30); do grep -q 'queue-test: posted in-process Carbon hotkey event status=0/0/0' "$work/app.log" && break; sleep 0.2; done
+grep -q 'queue-test: posted in-process Carbon hotkey event status=0/0/0' "$work/app.log" || { cat "$work/app.log"; echo 'In-process Carbon event was not posted successfully' >&2; exit 1; }
+sleep 2
+stopped=$(grep -c '^click ' "$work/events" || true)
+sleep 3
+after=$(grep -c '^click ' "$work/events" || true)
+[[ "$stopped" == "$after" ]] || { cat "$work/app.log"; echo "App continued clicking after in-process Carbon event: $stopped -> $after" >&2; exit 1; }
+"$work/control" dump "$app_pid" >"$work/accessibility.log"
+grep -q 'Start clicking' "$work/accessibility.log" || { cat "$work/accessibility.log"; echo 'App did not return to idle state' >&2; exit 1; }
+echo 'App registration and in-process Carbon hotkey event stopped real clicks; physical keyboard and WindowServer delivery were not tested.'
