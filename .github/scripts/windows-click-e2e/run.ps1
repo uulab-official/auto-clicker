@@ -108,6 +108,46 @@ try {
   $after = @(Get-Content $log).Count
   if ($stopped -ne $after) { throw "Clicks continued after emergency stop: $stopped to $after" }
   Write-Host "Global Ctrl+Shift+F8 stopped actual input; count remained $after"
+
+  function Find-Buttons([string]$name) {
+    $window = [System.Windows.Automation.AutomationElement]::FromHandle($app.MainWindowHandle)
+    $nodes = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+    foreach ($node in $nodes) {
+      try {
+        if ($node.Current.Name -eq $name -and $node.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and $node.Current.IsEnabled) { $node }
+      } catch [System.Windows.Automation.ElementNotAvailableException] { continue }
+    }
+  }
+  function Invoke-Button([string]$name, [int]$index = 0) {
+    $buttons = @(Find-Buttons $name)
+    if ($buttons.Count -le $index) { throw "Enabled button '$name' index $index unavailable; found $($buttons.Count)" }
+    $buttons[$index].GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+  }
+  # Configure two positions in the public UI and check two complete cycles in
+  # the target's mouse event log. All input remains inside this disposable VM.
+  Invoke-Button 'Sequence'
+  Invoke-Button 'Pick position'
+  [TestInput]::SetCursorPos(($rect.Left + 70),($rect.Top + 100)) | Out-Null
+  Start-Sleep -Seconds 4
+  Invoke-Button '+ Add click'
+  Invoke-Button 'Pick position' 1
+  [TestInput]::SetCursorPos(($rect.Left + 160),($rect.Top + 100)) | Out-Null
+  Start-Sleep -Seconds 4
+  Remove-Item -LiteralPath $log -ErrorAction SilentlyContinue
+  Invoke-Button 'Start clicking'
+  $deadline = (Get-Date).AddSeconds(25)
+  do {
+    Start-Sleep -Milliseconds 500
+    $lines = if (Test-Path $log) { @(Get-Content $log) } else { @() }
+  } while ($lines.Count -lt 4 -and (Get-Date) -lt $deadline)
+  foreach ($key in @(0x11,0x10,0x77)) { [TestInput]::keybd_event($key,0,0,[UIntPtr]::Zero) }
+  foreach ($key in @(0x77,0x10,0x11)) { [TestInput]::keybd_event($key,0,2,[UIntPtr]::Zero) }
+  if ($lines.Count -lt 4) { throw "Expected four sequence clicks, received $($lines.Count): $($lines -join '; ')" }
+  $xs = @($lines[0..3] | ForEach-Object { [int](($_ -split ',')[1]) })
+  if ([Math]::Abs($xs[0] - $xs[2]) -gt 2 -or [Math]::Abs($xs[1] - $xs[3]) -gt 2 -or ($xs[1] - $xs[0]) -lt 70) {
+    throw "Sequence positions did not repeat in order: $($lines[0..3] -join '; ')"
+  }
+  Write-Host "Two configured positions delivered in order over two cycles: $($lines[0..3] -join '; ')"
 } finally {
   if ($app) { Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue }
   Stop-Process -Id $targetProcess.Id -Force -ErrorAction SilentlyContinue
