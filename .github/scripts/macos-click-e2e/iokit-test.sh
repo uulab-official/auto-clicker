@@ -30,7 +30,7 @@ grep -q 'Carbon control hotkey received' "$work/carbon.log" || { echo 'Synthetic
 kill "$control_pid" 2>/dev/null || true; control_pid=''
 
 "$work/target" "$work/events" >"$work/target.log" 2>&1 & target_pid=$!
-src-tauri/target/release/auto-clicker >"$work/app.log" 2>&1 & app_pid=$!
+"${APP_BINARY:-src-tauri/target/release/auto-clicker}" >"$work/app.log" 2>&1 & app_pid=$!
 for _ in $(seq 1 60); do
   [[ -s "$work/events" ]] && break
   kill -0 "$target_pid" && kill -0 "$app_pid" || { cat "$work/target.log" "$work/app.log"; exit 1; }

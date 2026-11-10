@@ -1,0 +1,52 @@
+name: Verify macOS release shortcut via synthetic HIDSystem
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Exact draft or public release tag
+        required: true
+        default: v0.1.5
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shortcut: ['F8', 'Escape']
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download and verify the tagged macOS installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+          case "$(uname -m)" in arm64) arch=aarch64 ;; x86_64) arch=x64 ;; *) exit 1 ;; esac
+          name="Auto.Clicker_${RELEASE_TAG#v}_${arch}.dmg"
+          metadata=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")
+          [[ "$(jq -r '.tag_name' <<< "$metadata")" == "$RELEASE_TAG" ]]
+          [[ "$(jq -r '.prerelease' <<< "$metadata")" == false ]]
+          digest=$(jq -r --arg name "$name" '[.assets[] | select(.name == $name) | .digest] | if length == 1 then .[0] else empty end' <<< "$metadata")
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          mkdir -p "$RUNNER_TEMP/verified-app/mount" "$RUNNER_TEMP/verified-app/install"
+          gh release download "$RELEASE_TAG" --pattern "$name" --output "$RUNNER_TEMP/verified-app/app.dmg"
+          [[ "$digest" == "sha256:$(shasum -a 256 "$RUNNER_TEMP/verified-app/app.dmg" | awk '{print $1}')" ]]
+          codesign --verify --strict "$RUNNER_TEMP/verified-app/app.dmg"
+          xcrun stapler validate "$RUNNER_TEMP/verified-app/app.dmg"
+          spctl --assess --type open --context context:primary-signature -vv "$RUNNER_TEMP/verified-app/app.dmg"
+          hdiutil attach "$RUNNER_TEMP/verified-app/app.dmg" -nobrowse -readonly -mountpoint "$RUNNER_TEMP/verified-app/mount" -quiet
+          ditto "$RUNNER_TEMP/verified-app/mount/Auto Clicker.app" "$RUNNER_TEMP/verified-app/install/Auto Clicker.app"
+          hdiutil detach "$RUNNER_TEMP/verified-app/mount" -quiet
+          app="$RUNNER_TEMP/verified-app/install/Auto Clicker.app"
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" == "${RELEASE_TAG#v}" ]]
+          codesign --verify --deep --strict "$app"
+          printf 'APP_BINARY=%s\n' "$app/Contents/MacOS/auto-clicker" >> "$GITHUB_ENV"
+          echo "Verified $RELEASE_TAG $arch installer digest and notarization"
+      - name: Verify shortcut delivery and actual clicks on the installed app
+        env:
+          AUTOCLICKER_TEST_SHORTCUT: ${{ matrix.shortcut }}
+        run: bash .github/scripts/macos-click-e2e/iokit-test.sh
