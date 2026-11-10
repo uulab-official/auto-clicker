@@ -13,6 +13,7 @@ const translations: Record<string, [string, string]> = {
   'The selected update is no longer available; check again.':['선택한 업데이트를 사용할 수 없습니다. 다시 확인하세요.','選択した更新は利用できません。再確認してください。'],
   'This update check was superseded by a newer request.':['새로운 확인 요청으로 이전 요청이 취소되었습니다.','新しい確認要求によって以前の要求が無効になりました。'],
   'Clicking is paused while the pointer is over this window. Move it to where you want to click.':['포인터가 이 창 위에 있는 동안에는 클릭을 멈춥니다. 클릭할 위치로 포인터를 옮기세요.','ポインターがこのウィンドウ上にある間はクリックを一時停止します。クリックしたい位置へ移動してください。'],
+  'Stop shortcut':['중지 단축키','停止ショートカット'], 'Press to stop':['눌러서 중지','押すと停止'],
   'More options':['추가 옵션','その他のオプション'],
   'Too many steps (maximum 1000).':['단계가 너무 많습니다. 최대 1000개까지 가능합니다.','ステップ数が多すぎます。最大1000件です。']
 };

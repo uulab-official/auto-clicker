@@ -4,7 +4,7 @@ export type Wait = { kind: 'wait'; duration_ms: number };
 export type Step = Click | Wait;
 export type Settings = { mode: 'simple' | 'sequence'; simple: Click; steps: Step[]; repeat: number | null; startDelayMs: number };
 export const defaultClick = (): Click => ({ kind: 'click', button: 'left', clicks: 1, position: null, interval_ms: 1000 });
-export const defaults = (): Settings => ({ mode: 'simple', simple: defaultClick(), steps: [defaultClick()], repeat: null, startDelayMs: 0 });
+export const defaults = (): Settings => ({ mode: 'simple', simple: defaultClick(), steps: [defaultClick()], repeat: null, startDelayMs: 3000 });
 const isInteger = (value: unknown, min: number, max: number): value is number => Number.isInteger(value) && (value as number) >= min && (value as number) <= max;
 function isClick(value: unknown): value is Click {
   if (!value || typeof value !== 'object') return false;
