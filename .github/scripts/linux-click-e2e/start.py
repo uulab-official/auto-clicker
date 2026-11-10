@@ -12,7 +12,8 @@ def walk(node, matches, depth=0):
     if depth > 40:
         return False
     try:
-        if node.name == name and node.getRoleName() in ('push button', 'button'):
+        # aria-pressed mode selectors are exposed as toggle buttons by WebKit.
+        if node.name == name and node.getRoleName() in ('push button', 'button', 'toggle button'):
             matches.append(node)
             if len(matches) - 1 != desired:
                 return False
