@@ -49,3 +49,33 @@ after=$(grep -c '^click ' "$work/events" || true)
 [[ "$stopped" == "$after" ]] || { echo "Clicks continued after stop: $stopped -> $after" >&2; exit 1; }
 kill -0 "$app_pid" || { cat "$work/app.log"; exit 1; }
 echo "Public 0.1.3 produced $count actual target clicks and stopped after Ctrl+Shift+F8"
+
+# Configure two positions through the real UI, then check the target's recorded
+# input order for two complete cycles. Position capture uses the actual cursor.
+"$work/control" button "$app_pid" 'Sequence' 0
+"$work/control" button "$app_pid" 'Pick position' 0
+"$work/control" move "$((x - 40))" "$y"
+sleep 4
+"$work/control" button "$app_pid" '+ Add click' 0
+"$work/control" button "$app_pid" 'Pick position' 1
+"$work/control" move "$((x + 40))" "$y"
+sleep 4
+before=$(grep -c '^click ' "$work/events" || true)
+"$work/control" start "$app_pid"
+for _ in $(seq 1 20); do
+  count=$(grep -c '^click ' "$work/events" || true)
+  (( count >= before + 4 )) && break
+  sleep 1
+done
+(( count >= before + 4 )) || { "$work/control" dump "$app_pid" || true; cat "$work/events"; echo 'Sequence did not deliver four clicks' >&2; exit 1; }
+head -n "$((before + 5))" "$work/events" | tail -4 | awk '
+  /^click / { expected = (NR % 2 == 1 ? 40 : 120); if ($2 < expected - 2 || $2 > expected + 2) exit 1; next }
+  { exit 1 }
+' || { cat "$work/events"; echo 'Sequence click order differed from expected positions' >&2; exit 1; }
+"$work/control" stop
+sleep 2
+stopped=$(grep -c '^click ' "$work/events" || true)
+sleep 3
+after=$(grep -c '^click ' "$work/events" || true)
+[[ "$stopped" == "$after" ]] || { echo "Sequence continued after stop: $stopped -> $after" >&2; exit 1; }
+echo 'Public 0.1.3 delivered two repetitions of the two-position sequence in order and stopped'

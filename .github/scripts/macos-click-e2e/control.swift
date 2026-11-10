@@ -25,7 +25,11 @@ if args[1] == "stop" {
     key(56, false, [.maskControl]); key(59, false, [])
     exit(0)
 }
-guard ["start", "dump"].contains(args[1]), args.count == 3, let pid = Int32(args[2]) else { exit(2) }
+guard ["start", "dump", "button"].contains(args[1]), args.count >= 3, let pid = Int32(args[2]) else { exit(2) }
+if args[1] == "button" && (args.count != 5 || Int(args[4]) == nil) { exit(2) }
+let labels = args[1] == "button" ? Set([args[3]]) : Set(["Start clicking", "클릭 시작", "クリックを開始"])
+let wanted = args[1] == "button" ? (Int(args[4]) ?? 0) : 0
+var matching = 0
 let root = AXUIElementCreateApplication(pid)
 func attr(_ item: AXUIElement, _ name: CFString) -> CFTypeRef? {
     var value: CFTypeRef?
@@ -36,9 +40,9 @@ func press(_ item: AXUIElement, _ depth: Int) -> Bool {
     let role = (attr(item, kAXRoleAttribute as CFString) as? String) ?? ""
     let title = (attr(item, kAXTitleAttribute as CFString) as? String) ?? ""
     let desc = (attr(item, kAXDescriptionAttribute as CFString) as? String) ?? ""
-    let labels = Set(["Start clicking", "클릭 시작", "クリックを開始"])
     if role == "AXButton" && (labels.contains(title) || labels.contains(desc)) {
-        return AXUIElementPerformAction(item, kAXPressAction as CFString) == .success
+        let current = matching; matching += 1
+        if current == wanted { return AXUIElementPerformAction(item, kAXPressAction as CFString) == .success }
     }
     if let children = attr(item, kAXChildrenAttribute as CFString) as? [AXUIElement] {
         for child in children where press(child, depth + 1) { return true }
@@ -58,7 +62,8 @@ func dump(_ item: AXUIElement, _ depth: Int) {
 }
 if args[1] == "dump" { dump(root, 0); exit(0) }
 for _ in 0..<60 {
-    if press(root, 0) { print("Pressed Start clicking in public app PID \(pid)"); exit(0) }
+    matching = 0
+    if press(root, 0) { print("Pressed \(labels) in public app PID \(pid)"); exit(0) }
     Thread.sleep(forTimeInterval: 1)
 }
-fputs("Could not invoke Start clicking in public app\n", stderr); exit(1)
+fputs("Could not invoke \(labels) in public app\n", stderr); exit(1)
