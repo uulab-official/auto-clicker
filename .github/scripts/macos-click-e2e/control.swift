@@ -84,7 +84,7 @@ func dump(_ item: AXUIElement, _ depth: Int) {
 if args[1] == "dump" { dump(root, 0); exit(0) }
 for _ in 0..<60 {
     matching = 0
-    if press(root, 0) { print("Pressed \(labels) in public app PID \(pid)"); exit(0) }
+    if press(root, 0) { print("Pressed \(labels) in target app PID \(pid)"); exit(0) }
     Thread.sleep(forTimeInterval: 1)
 }
 fputs("Could not invoke \(labels) in public app; accessibility tree follows\n", stderr)

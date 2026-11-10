@@ -75,6 +75,28 @@ def focused_title():
     except subprocess.SubprocessError:
         return ''
 
+def dump_windows():
+    try:
+        ids = subprocess.check_output(['xdotool', 'search', '--onlyvisible', '--name', '.*'], text=True, timeout=3).split()
+    except subprocess.SubprocessError:
+        ids = []
+    print('Visible X11 windows:', flush=True)
+    for window in ids:
+        try:
+            name = subprocess.check_output(['xdotool', 'getwindowname', window], text=True, timeout=2).strip()
+            print(f'  {window}: {name!r}', flush=True)
+        except subprocess.SubprocessError:
+            continue
+
+def dump_accessibility(pid):
+    print('Application accessibility controls:', flush=True)
+    for node in nodes_for(pid):
+        try:
+            if node.name:
+                print(f'  {node.getRoleName()}: {node.name!r}', flush=True)
+        except (LookupError, RuntimeError, NotImplementedError):
+            continue
+
 def wait_dialog(title, timeout=15):
     end = time.monotonic() + timeout
     while time.monotonic() < end:
@@ -82,6 +104,10 @@ def wait_dialog(title, timeout=15):
         if title.lower() in current.lower():
             return
         time.sleep(.1)
+    dump_windows()
+    app_pid = int(sys.argv[2]) if sys.argv[1] == 'test' else -1
+    if app_pid > 0:
+        dump_accessibility(app_pid)
     raise RuntimeError(f'Native file dialog {title!r} did not receive focus (active window: {focused_title()!r})')
 
 def choose_path(title, path):

@@ -20,7 +20,7 @@ jobs:
       - name: Install isolated desktop dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev xvfb xdotool dbus-x11 at-spi2-core python3-pyatspi libatk-adaptor
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev xvfb xdotool dbus-x11 at-spi2-core python3-pyatspi libatk-adaptor openbox
       - run: npm ci
       - run: npm run tauri build -- --no-bundle
       - name: Exercise native open and save dialogs on isolated X11
