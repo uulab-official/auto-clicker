@@ -1,0 +1,14 @@
+name: Windows public click verification
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Exercise the published Windows application on an isolated desktop
+        shell: pwsh
+        run: .github/scripts/windows-click-e2e/run.ps1
