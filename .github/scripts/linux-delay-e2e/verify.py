@@ -35,6 +35,18 @@ def find(predicate, timeout=30):
             except (LookupError, RuntimeError):
                 continue
         time.sleep(0.2)
+    for app in pyatspi.Registry.getDesktop(0):
+        try:
+            if app.get_process_id() == pid:
+                print('Application accessibility tree:', flush=True)
+                for node in walk(app):
+                    try:
+                        if node.name or node.getRoleName() in ('spin button', 'entry', 'text'):
+                            print(f'  {node.getRoleName()}: {node.name!r}', flush=True)
+                    except (LookupError, RuntimeError, NotImplementedError):
+                        continue
+        except (LookupError, RuntimeError):
+            continue
     raise RuntimeError('Could not find the required application control')
 
 def press(name):
@@ -45,7 +57,16 @@ def press(name):
             return
     raise RuntimeError(f'Could not activate {name}')
 
-field = find(lambda n: 'start delay' in (n.name or '').lower() and n.getRoleName() in ('spin button', 'text'))
+def delay_field(node):
+    if 'start delay' not in (node.name or '').lower():
+        return False
+    try:
+        node.queryEditableText()
+        return True
+    except (LookupError, RuntimeError, NotImplementedError):
+        return False
+
+field = find(delay_field)
 if not field.queryComponent().grabFocus():
     raise RuntimeError('Could not focus start delay input')
 subprocess.run(['xdotool', 'key', '--clearmodifiers', 'ctrl+a'], check=True)
