@@ -15,7 +15,7 @@ trap cleanup EXIT
 mkdir -p "$work/config" "$work/data" "$work/cache"
 export XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_CACHE_HOME="$work/cache"
 export LANG=C.UTF-8 WEBKIT_DISABLE_COMPOSITING_MODE=1 GDK_BACKEND=x11 NO_AT_BRIDGE=0 GTK_MODULES=atk-bridge
-/usr/bin/python3 .github/scripts/linux-click-e2e/target.py "$work/count" >"$work/target.log" 2>&1 & target_pid=$!
+/usr/bin/python3 .github/scripts/linux-click-e2e/target.py "$work/count" "$work/events" >"$work/target.log" 2>&1 & target_pid=$!
 src-tauri/target/release/auto-clicker >"$work/app.log" 2>&1 & app_pid=$!
 for _ in $(seq 1 60); do
   if [[ -f "$work/count" ]] && xdotool search --onlyvisible --name '^Auto Clicker$' >/dev/null 2>&1; then break; fi
@@ -40,3 +40,38 @@ after=$(cat "$work/count")
 [[ "$stopped" == "$after" ]] || { echo "Clicks continued after emergency stop: $stopped -> $after" >&2; exit 1; }
 kill -0 "$app_pid" 2>/dev/null || { cat "$work/app.log"; echo 'App exited unexpectedly' >&2; exit 1; }
 echo "Verified $count target clicks and no additional clicks after global emergency stop"
+
+# Configure two fixed positions using the same controls and capture countdown as
+# a user. All pointer and keyboard events stay inside this disposable Xvfb.
+action() { /usr/bin/python3 .github/scripts/linux-click-e2e/start.py "$app_pid" "$@"; }
+action Sequence
+action 'Pick position' 0
+xdotool mousemove 1100 900
+sleep 4
+action '+ Add click'
+action 'Pick position' 1
+xdotool mousemove 1200 900
+sleep 4
+: > "$work/events"
+action 'Start clicking'
+for _ in $(seq 1 15); do
+  (( $(wc -l < "$work/events") >= 4 )) && break
+  sleep 1
+done
+xdotool key --clearmodifiers ctrl+shift+F8
+sleep 2
+/usr/bin/python3 - "$work/events" <<'PY'
+import pathlib, sys
+events = [tuple(map(int, line.split(','))) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
+expected = [(1100, 900), (1200, 900), (1100, 900), (1200, 900)]
+if events[:4] != expected:
+    raise SystemExit(f'Expected two ordered cycles {expected}, received {events}')
+if any(point != expected[i % 2] for i, point in enumerate(events)):
+    raise SystemExit(f'Unexpected sequence after initial cycles: {events}')
+print(f'Verified {len(events)} real target events in alternating order across two captured positions')
+PY
+before=$(wc -l < "$work/events")
+sleep 3
+after=$(wc -l < "$work/events")
+[[ "$before" == "$after" ]] || { echo "Sequence continued after emergency stop: $before -> $after" >&2; exit 1; }
+echo 'Verified sequence stops after global emergency shortcut'
