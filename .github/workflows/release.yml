@@ -259,4 +259,10 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
           gh release download "$RELEASE_TAG" --pattern latest.json --dir "$RUNNER_TEMP"
+          python3 .github/scripts/normalize-updater-manifest.py "$RUNNER_TEMP/latest.json"
           python3 .github/scripts/verify-release.py "$RUNNER_TEMP/latest.json"
+          bash .github/scripts/auto-release/guard-upload.sh
+          gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/latest.json" --clobber
+          mkdir "$RUNNER_TEMP/verified-manifest"
+          gh release download "$RELEASE_TAG" --pattern latest.json --dir "$RUNNER_TEMP/verified-manifest"
+          cmp "$RUNNER_TEMP/latest.json" "$RUNNER_TEMP/verified-manifest/latest.json"
