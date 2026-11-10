@@ -32,7 +32,7 @@ function Invoke-AppButton([string]$name) {
     try {
       $button = Find-AppNode { param($n) $n.Current.Name -eq $name -and $n.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and $n.Current.IsEnabled } 2
       $pattern = $null
-      if ($button.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pattern)) { $pattern.Invoke(); return }
+      if ($button.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pattern)) { $pattern.Invoke(); Write-Host "Invoked app control: $name"; return }
     } catch { }
     Start-Sleep -Milliseconds 250
   } while ((Get-Date) -lt $deadline)
@@ -55,6 +55,15 @@ function Wait-Dialog([string]$title) {
     }
     Start-Sleep -Milliseconds 250
   } while ((Get-Date) -lt $deadline)
+  Write-Host "Native dialog '$title' not found; desktop window diagnostics:"
+  $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition)
+  foreach ($window in $windows) { try { Write-Host "Window pid=$($window.Current.ProcessId) name=$($window.Current.Name) class=$($window.Current.ClassName)" } catch { } }
+  try {
+    $root = [System.Windows.Automation.AutomationElement]::FromHandle($app.MainWindowHandle)
+    $nodes = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+    Write-Host 'Current app UI labels:'
+    foreach ($node in $nodes) { try { if ($node.Current.Name) { Write-Host "$($node.Current.ControlType.ProgrammaticName): $($node.Current.Name)" } } catch { } }
+  } catch { Write-Host "App UI diagnostic failed: $_" }
   throw "Native dialog '$title' did not appear for app PID $($app.Id)"
 }
 function Choose-File([string]$title, [string]$path, [string]$buttonName) {
