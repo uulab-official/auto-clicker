@@ -1,0 +1,16 @@
+name: macOS public click and emergency stop
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify actual public app on the disposable macOS VM
+        run: bash .github/scripts/macos-click-e2e/run.sh
