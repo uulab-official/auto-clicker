@@ -8,6 +8,11 @@ using System;
 using System.Runtime.InteropServices;
 public static class TestInput {
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+  [StructLayout(LayoutKind.Sequential)] public struct Point { public int X; public int Y; }
+  [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left; public int Top; public int Right; public int Bottom; }
+  [DllImport("user32.dll")] public static extern bool GetCursorPos(out Point point);
+  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr window, out Rect rect);
+  [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(Point point);
   [DllImport("user32.dll")] public static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
 }
 '@
@@ -34,7 +39,9 @@ $form.TopMost = $true
 $form.Add_MouseDown({ param($sender,$event) Add-Content -LiteralPath $Log -Value "$($event.Button),$($event.X),$($event.Y)" })
 [System.Windows.Forms.Application]::Run($form)
 '@ | Set-Content -LiteralPath $target -Encoding UTF8
-$targetProcess = Start-Process powershell.exe -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File',"`"$target`"", "`"$log`"" -PassThru
+$targetOut = Join-Path $tmp 'target.stdout'
+$targetErr = Join-Path $tmp 'target.stderr'
+$targetProcess = Start-Process powershell.exe -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File',"`"$target`"", "`"$log`"" -RedirectStandardOutput $targetOut -RedirectStandardError $targetErr -PassThru
 $app = $null
 try {
   $app = Start-Process $exe -PassThru
@@ -55,16 +62,42 @@ try {
     }
   } while (-not $start -and (Get-Date) -lt $deadline)
   if (-not $start) { throw 'Enabled Start clicking button was not found' }
+  $deadline = (Get-Date).AddSeconds(15)
+  do {
+    $targetProcess.Refresh()
+    if ($targetProcess.HasExited) { throw "Target exited before test: $(Get-Content $targetErr -Raw)" }
+    if ($targetProcess.MainWindowHandle -ne 0) { break }
+    Start-Sleep -Milliseconds 500
+  } while ((Get-Date) -lt $deadline)
+  if ($targetProcess.MainWindowHandle -eq 0) { throw 'Target window handle unavailable' }
+  $rect = [TestInput+Rect]::new()
+  if (-not [TestInput]::GetWindowRect($targetProcess.MainWindowHandle,[ref]$rect)) { throw 'Cannot get target window rectangle' }
+  Write-Host "Target handle=$($targetProcess.MainWindowHandle) rectangle=$($rect.Left),$($rect.Top)-$($rect.Right),$($rect.Bottom)"
   # Invoke through UI Automation; place the cursor in the target after invocation
   # before the first click, then verify actual delivered Windows mouse events.
-  [TestInput]::SetCursorPos(100,100) | Out-Null
+  $x = $rect.Left + 100; $y = $rect.Top + 100
+  [TestInput]::SetCursorPos($x,$y) | Out-Null
+  $point = [TestInput+Point]::new()
+  [TestInput]::GetCursorPos([ref]$point) | Out-Null
+  $under = [TestInput]::WindowFromPoint($point)
+  Write-Host "Cursor=$($point.X),$($point.Y); window under pointer=$under"
+  if ($under -ne $targetProcess.MainWindowHandle) { throw 'Target window is not under the pointer' }
   $start.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
   $deadline = (Get-Date).AddSeconds(20)
   do {
     Start-Sleep -Milliseconds 500
     $count = if (Test-Path $log) { @(Get-Content $log).Count } else { 0 }
   } while ($count -lt 2 -and (Get-Date) -lt $deadline)
-  if ($count -lt 2) { throw "Expected at least two delivered clicks, received $count" }
+  if ($count -lt 2) {
+    Write-Host "Target stderr: $(Get-Content $targetErr -Raw)"
+    $root = [System.Windows.Automation.AutomationElement]::FromHandle($app.MainWindowHandle)
+    $elements = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+    $names = foreach ($e in $elements) { try { if ($e.Current.Name) { $e.Current.Name } } catch {} }
+    Write-Host "App UI names after start: $($names -join ' | ')"
+    [TestInput]::GetCursorPos([ref]$point) | Out-Null
+    Write-Host "Cursor after start=$($point.X),$($point.Y); window under pointer=$([TestInput]::WindowFromPoint($point))"
+    throw "Expected at least two delivered clicks, received $count"
+  }
   Write-Host "Public v0.1.3 delivered $count simple clicks to a separate Windows application"
   # Ctrl+Shift+F8, using virtual events confined to the disposable runner.
   foreach ($key in @(0x11,0x10,0x77)) { [TestInput]::keybd_event($key,0,0,[UIntPtr]::Zero) }
