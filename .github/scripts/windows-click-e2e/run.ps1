@@ -159,6 +159,54 @@ try {
     throw "Sequence positions did not repeat in order: $($lines[0..3] -join '; ')"
   }
   Write-Host "Two configured positions delivered in order over two cycles: $($lines[0..3] -join '; ')"
+
+  # Configure a finite run from the real UI: two right-button double clicks.
+  # The independent target must receive exactly four right-button down events.
+  Start-Sleep -Seconds 2
+  Invoke-Button 'Simple click'
+  function Find-Control([System.Windows.Automation.ControlType]$type, [string]$name) {
+    $window = [System.Windows.Automation.AutomationElement]::FromHandle($app.MainWindowHandle)
+    $nodes = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+    foreach ($node in $nodes) {
+      try { if ($node.Current.ControlType -eq $type -and $node.Current.Name -eq $name) { return $node } } catch { }
+    }
+    throw "UI control '$name' ($($type.ProgrammaticName)) unavailable"
+  }
+  function Select-Option([string]$label, [string]$option) {
+    $combo = Find-Control ([System.Windows.Automation.ControlType]::ComboBox) $label
+    $combo.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern).Expand()
+    Start-Sleep -Milliseconds 500
+    $item = Find-Control ([System.Windows.Automation.ControlType]::ListItem) $option
+    $item.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select()
+  }
+  Select-Option 'Mouse button' 'Right'
+  Select-Option 'Click type' 'Double click'
+  $window = [System.Windows.Automation.AutomationElement]::FromHandle($app.MainWindowHandle)
+  $nodes = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+  $radios = @($nodes | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::RadioButton })
+  if ($radios.Count -ne 2) { throw "Expected two repetition radio buttons, found $($radios.Count)" }
+  $radios[1].GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select()
+  $repetitions = Find-Control ([System.Windows.Automation.ControlType]::Spinner) 'Number of repetitions'
+  $range = $null
+  if ($repetitions.TryGetCurrentPattern([System.Windows.Automation.RangeValuePattern]::Pattern, [ref]$range)) {
+    $range.SetValue(2)
+  } else {
+    $repetitions.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue('2')
+  }
+  Remove-Item -LiteralPath $log -ErrorAction SilentlyContinue
+  [TestInput]::SetCursorPos(($rect.Left + 100),($rect.Top + 100)) | Out-Null
+  Invoke-Button 'Start clicking'
+  $deadline = (Get-Date).AddSeconds(20)
+  do {
+    Start-Sleep -Milliseconds 500
+    $lines = if (Test-Path $log) { @(Get-Content $log) } else { @() }
+  } while ($lines.Count -lt 4 -and (Get-Date) -lt $deadline)
+  Start-Sleep -Seconds 4
+  $lines = if (Test-Path $log) { @(Get-Content $log) } else { @() }
+  if ($lines.Count -ne 4 -or @($lines | Where-Object { $_ -notmatch '^Right,' }).Count -ne 0) {
+    throw "Expected exactly four right-button events from two double-click cycles: $($lines -join '; ')"
+  }
+  Write-Host "Finite two-cycle right double-click run delivered exactly four right events and stopped: $($lines -join '; ')"
 } finally {
   if ($app) { Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue }
   Stop-Process -Id $targetProcess.Id -Force -ErrorAction SilentlyContinue
