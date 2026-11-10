@@ -2,9 +2,9 @@ export type Position = { x: number; y: number };
 export type Click = { kind: 'click'; button: 'left' | 'right' | 'middle'; clicks: 1 | 2; position: Position | null; interval_ms: number };
 export type Wait = { kind: 'wait'; duration_ms: number };
 export type Step = Click | Wait;
-export type Settings = { mode: 'simple' | 'sequence'; simple: Click; steps: Step[]; repeat: number | null };
+export type Settings = { mode: 'simple' | 'sequence'; simple: Click; steps: Step[]; repeat: number | null; startDelayMs: number };
 export const defaultClick = (): Click => ({ kind: 'click', button: 'left', clicks: 1, position: null, interval_ms: 1000 });
-export const defaults = (): Settings => ({ mode: 'simple', simple: defaultClick(), steps: [defaultClick()], repeat: null });
+export const defaults = (): Settings => ({ mode: 'simple', simple: defaultClick(), steps: [defaultClick()], repeat: null, startDelayMs: 0 });
 const isInteger = (value: unknown, min: number, max: number): value is number => Number.isInteger(value) && (value as number) >= min && (value as number) <= max;
 function isClick(value: unknown): value is Click {
   if (!value || typeof value !== 'object') return false;
@@ -28,6 +28,7 @@ export function parseSettings(raw: string | null): Settings {
     if (!value || typeof value !== 'object') return defaults();
     const s = value as Record<string, unknown>;
     if ((s.mode !== 'simple' && s.mode !== 'sequence') || !isClick(s.simple) || !Array.isArray(s.steps) || s.steps.length > 1000 || !s.steps.every(isStep) || !(s.repeat === null || isInteger(s.repeat, 1, 1000000))) return defaults();
-    return s as Settings;
+    if (s.startDelayMs !== undefined && (!isInteger(s.startDelayMs, 0, 60000) || s.startDelayMs % 1000 !== 0)) return defaults();
+    return { ...s, startDelayMs: s.startDelayMs ?? 0 } as Settings;
   } catch { return defaults(); }
 }

@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 pub struct Config {
     pub steps: Vec<Step>,
     pub repeat: Option<u64>,
+    #[serde(default)]
+    pub start_delay_ms: u64,
 }
 #[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
@@ -32,6 +34,9 @@ pub struct Position {
 }
 
 pub fn validate(config: &Config) -> Result<(), String> {
+    if config.start_delay_ms > 60_000 {
+        return Err("Start delay must be between 0 and 60 seconds.".into());
+    }
     if config.steps.is_empty() {
         return Err("Add at least one step.".into());
     }

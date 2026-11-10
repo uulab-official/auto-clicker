@@ -55,9 +55,10 @@ function render() {
       <div class="tabs" role="group" aria-label="Click mode"><button type="button" aria-pressed="${!sequence}" data-action="mode" data-mode="simple">Simple click</button><button type="button" aria-pressed="${sequence}" data-action="mode" data-mode="sequence">Sequence</button></div>
       <form id="config-form"><fieldset${disabled(status.running || capturing)}><legend class="sr-only">Click configuration</legend>
       ${sequence ? `<div class="section-heading"><div><p class="eyebrow">YOUR SEQUENCE</p><h2>Steps</h2><p>Actions run from top to bottom, then repeat.</p></div><span class="count">${settings.steps.length} ${settings.steps.length === 1 ? 'STEP' : 'STEPS'}</span></div>
-      <div class="steps">${settings.steps.map((step, i) => `<article class="step"><div class="step-header"><div class="step-title"><span class="step-number">${String(i + 1).padStart(2, '0')}</span><strong>${step.kind === 'click' ? 'Click' : 'Wait'}</strong></div><div class="step-actions"><button type="button" aria-label="Move step ${i+1} up" data-action="up" data-index="${i}"${disabled(i === 0)}>↑</button><button type="button" aria-label="Move step ${i+1} down" data-action="down" data-index="${i}"${disabled(i === settings.steps.length - 1)}>↓</button><button type="button" aria-label="Remove step ${i+1}" data-action="remove" data-index="${i}">×</button></div></div>${step.kind === 'click' ? clickFields(step, String(i)) : `<label class="wait-field">Wait duration <span class="unit">ms</span><input type="number" min="1" max="86400000" step="1" data-index="${i}" data-field="duration_ms" value="${escape(step.duration_ms)}" required></label>`}</article>`).join('') || '<div class="empty">Your sequence is empty. Add a click or a wait to get started.</div>'}</div>
-      <div class="add-actions"><button type="button" class="button secondary" data-action="add-click">+ Add click</button><button type="button" class="button secondary" data-action="add-wait">+ Add wait</button></div>` : `<div class="section-heading"><div><p class="eyebrow">SINGLE ACTION</p><h2>Click settings</h2><p>Choose how and where to click.</p></div></div><div class="simple-fields">${clickFields(settings.simple, 'simple')}</div>`}
+      <div class="steps">${settings.steps.map((step, i) => `<article class="step"><div class="step-header"><div class="step-title"><span class="step-number">${String(i + 1).padStart(2, '0')}</span><strong>${step.kind === 'click' ? 'Click' : 'Wait'}</strong></div><div class="step-actions"><button type="button" aria-label="Move step ${i+1} up" data-action="up" data-index="${i}"${disabled(i === 0)}>↑</button><button type="button" aria-label="Move step ${i+1} down" data-action="down" data-index="${i}"${disabled(i === settings.steps.length - 1)}>↓</button><button type="button" aria-label="Duplicate step ${i+1}" data-action="duplicate" data-index="${i}"${disabled(settings.steps.length >= 1000)}>⧉</button><button type="button" aria-label="Remove step ${i+1}" data-action="remove" data-index="${i}">×</button></div></div>${step.kind === 'click' ? clickFields(step, String(i)) : `<label class="wait-field">Wait duration <span class="unit">ms</span><input type="number" min="1" max="86400000" step="1" data-index="${i}" data-field="duration_ms" value="${escape(step.duration_ms)}" required></label>`}</article>`).join('') || '<div class="empty">Your sequence is empty. Add a click or a wait to get started.</div>'}</div>
+      <div class="add-actions"><button type="button" class="button secondary" data-action="add-click"${disabled(settings.steps.length >= 1000)}>+ Add click</button><button type="button" class="button secondary" data-action="add-wait"${disabled(settings.steps.length >= 1000)}>+ Add wait</button></div>` : `<div class="section-heading"><div><p class="eyebrow">SINGLE ACTION</p><h2>Click settings</h2><p>Choose how and where to click.</p></div></div><div class="simple-fields">${clickFields(settings.simple, 'simple')}</div>`}
       <div class="repeat-section"><div><span class="label">Repeat</span><p class="hint">Choose when the run should stop.</p></div><div class="repeat-controls"><label class="radio"><input type="radio" name="repeatMode" value="forever"${checked(settings.repeat === null)}> Until stopped</label><label class="radio"><input type="radio" name="repeatMode" value="count"${checked(settings.repeat !== null)}> <input aria-label="Number of repetitions" id="repeat-count" type="number" min="1" max="1000000" step="1" required value="${escape(settings.repeat ?? 1)}"${disabled(settings.repeat === null)}> times</label></div></div>
+      <div class="start-delay"><label for="start-delay">Start delay <span class="unit">seconds</span></label><input id="start-delay" type="number" min="0" max="60" step="1" required value="${escape(settings.startDelayMs / 1000)}"><p class="hint">Wait before the first click so you can switch windows. You can stop during the wait.</p></div>
       </fieldset></form></section>
       <aside class="control-panel"><div><p class="eyebrow">RUN CONTROL</p><h2>${status.running ? 'In progress' : 'Ready when you are'}</h2><p>${status.running ? `Completed cycles: ${status.completed_cycles}` : 'Review your settings, then start clicking.'}</p></div>
       <button type="button" class="button primary ${status.running ? 'stop' : ''}" data-action="toggle"${disabled(toggleDisabled(status, statusReady, capturing, updateState === 'installing'))}>${status.running ? '<span aria-hidden="true">■</span> Stop clicking' : '<span aria-hidden="true">▶</span> Start clicking'}</button>
@@ -78,10 +79,16 @@ function render() {
   }
 }
 function stepAt(index: string): Step { return index === 'simple' ? settings.simple : settings.steps[Number(index)]; }
+function cloneStep(step: Step): Step {
+  return step.kind === 'click'
+    ? { ...step, position: step.position ? { ...step.position } : null }
+    : { ...step };
+}
 function changeInput(target: HTMLInputElement | HTMLSelectElement) {
   if (target instanceof HTMLInputElement && target.type === 'number' && (!target.value || !target.validity.valid)) return;
   if (target.name === 'repeatMode') { settings.repeat = target.value === 'forever' ? null : 1; save(); render(); return; }
   if (target.id === 'repeat-count') { settings.repeat = Number(target.value); save(); return; }
+  if (target.id === 'start-delay') { settings.startDelayMs = Number(target.value) * 1000; save(); return; }
   const index = target.dataset.index, field = target.dataset.field;
   if (index === undefined || !field) return;
   const step = stepAt(index);
@@ -121,14 +128,15 @@ app.addEventListener('click', async e => {
     if (!form.reportValidity()) return;
     const steps = settings.mode === 'simple' ? [settings.simple] : settings.steps;
     if (!steps.length) { notice = 'Add at least one step before starting.'; render(); return; }
-    try { await invoke('start_run', { config: { steps, repeat: settings.repeat } }); } catch (error) { notice = String(error); render(); }
+    try { await invoke('start_run', { config: { steps, repeat: settings.repeat, start_delay_ms: settings.startDelayMs } }); } catch (error) { notice = String(error); render(); }
     return;
   }
   if (status.running || capturing) return;
   if (action === 'mode') settings.mode = button.dataset.mode === 'sequence' ? 'sequence' : 'simple';
-  if (action === 'add-click') settings.steps.push(defaultClick());
-  if (action === 'add-wait') settings.steps.push({ kind: 'wait', duration_ms: 1000 });
+  if (action === 'add-click' && settings.steps.length < 1000) settings.steps.push(defaultClick());
+  if (action === 'add-wait' && settings.steps.length < 1000) settings.steps.push({ kind: 'wait', duration_ms: 1000 });
   const i = Number(index);
+  if (action === 'duplicate' && settings.steps.length < 1000 && settings.steps[i]) settings.steps.splice(i + 1, 0, cloneStep(settings.steps[i]));
   if (action === 'remove') settings.steps.splice(i, 1);
   if ((action === 'up' && i > 0) || (action === 'down' && i < settings.steps.length - 1)) { const j = i + (action === 'up' ? -1 : 1); [settings.steps[i], settings.steps[j]] = [settings.steps[j], settings.steps[i]]; }
   if (action === 'clear-position') { const step = stepAt(index); if (step?.kind === 'click') step.position = null; }

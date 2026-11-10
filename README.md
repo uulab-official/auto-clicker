@@ -12,6 +12,7 @@ Auto Clicker는 Rust와 Tauri로 만든 오픈소스 데스크톱 자동 클릭 
 시작하며 `Ctrl+Shift+F8`은 실행을 정지합니다. macOS에서는 손쉬운 사용 권한이
 필요합니다. Linux에서는 전역 긴급 정지를 보장할 수 없는 Wayland 세션의
 클릭 실행을 차단하므로 X11 세션을 사용하세요.
+시작 전 0~60초 대기와 단계 복제로 작업을 더 편하게 준비할 수 있습니다.
 개발 환경과 빌드 방법은 아래 Development 항목을 참고하세요.
 
 ## 日本語
@@ -19,6 +20,7 @@ Auto Clicker는 Rust와 Tauri로 만든 오픈소스 데스크톱 자동 클릭 
 Auto Clicker は Rust と Tauri で作られたオープンソースのデスクトップ用自動
 クリックツールです。単純な繰り返しクリックと、複数の位置を順番にクリックする
 マクロに対応します。アプリから開始し、`Ctrl+Shift+F8` で停止できます。
+開始前の待機時間（0〜60秒）とステップの複製にも対応します。
 macOS ではアクセシビリティの許可が必要です。Linux の Wayland セッションでは
 緊急停止を保証できないためクリックを無効にしています。X11 を使用してください。開発とビルドの手順は下記 Development を参照してください。
 
@@ -27,6 +29,8 @@ macOS ではアクセシビリティの許可が必要です。Linux の Wayland
 - Repeat a click at the current pointer position or a specified position.
 - Compose a sequence of clicks and delays and repeat it a fixed number of times
   or until stopped.
+- Duplicate a sequence step, and optionally wait up to 60 seconds before the
+  first action to give yourself time to switch windows. The wait can be stopped.
 - Start and stop using the application. The global shortcut **Ctrl+Shift+F8**
   stops a running sequence; it does not start one.
 

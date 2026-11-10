@@ -174,6 +174,9 @@ fn execute(
     mut cycle: impl FnMut(),
     mut click: impl FnMut(&Step) -> Result<(), String>,
 ) -> Result<(), String> {
+    if !sleep_interruptibly(cancel, config.start_delay_ms) {
+        return Ok(());
+    }
     let mut completed = 0;
     loop {
         for step in &config.steps {
@@ -399,6 +402,47 @@ pub fn run() {
 mod run_tests {
     use super::*;
     #[test]
+    fn start_delay_is_interruptible_before_first_click() {
+        let config: Config = serde_json::from_str(r#"{"steps":[{"kind":"click","button":"left","clicks":1,"position":null,"interval_ms":10}],"repeat":1,"start_delay_ms":60000}"#).unwrap();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let signal = cancel.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            execute(
+                &config,
+                &signal,
+                || {},
+                |_| {
+                    tx.send(()).unwrap();
+                    Ok(())
+                },
+            )
+            .unwrap();
+        });
+        assert!(rx.recv_timeout(Duration::from_millis(50)).is_err());
+        cancel.store(true, Ordering::Release);
+        worker.join().unwrap();
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn start_delay_occurs_before_the_first_click() {
+        let config: Config = serde_json::from_str(r#"{"steps":[{"kind":"click","button":"left","clicks":1,"position":null,"interval_ms":10}],"repeat":1,"start_delay_ms":100}"#).unwrap();
+        let started = Instant::now();
+        let mut clicked_after = None;
+        execute(
+            &config,
+            &AtomicBool::new(false),
+            || {},
+            |_| {
+                clicked_after = Some(started.elapsed());
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert!(clicked_after.unwrap() >= Duration::from_millis(100));
+    }
+    #[test]
     fn executes_steps_in_order_for_each_cycle() {
         let config = Config {
             steps: vec![
@@ -416,6 +460,7 @@ mod run_tests {
                 },
             ],
             repeat: Some(2),
+            start_delay_ms: 0,
         };
         let mut buttons = Vec::new();
         let mut cycles = 0;
@@ -444,6 +489,7 @@ mod run_tests {
                 interval_ms: 10,
             }],
             repeat: None,
+            start_delay_ms: 0,
         };
         let mut clicks = 0;
         execute(
