@@ -33,13 +33,13 @@ read -r label x y < "$work/events"
 "$work/control" move "$x" "$y"
 "$work/control" start "$app_pid"
 count=0
-for _ in $(seq 1 20); do
+for _ in $(seq 1 30); do
   count=$(grep -c '^click ' "$work/events" || true)
   (( count >= 20 )) && break
-  sleep 1
+  sleep 0.1
 done
-(( count >= 20 )) || { cat "$work/app.log" "$work/events"; echo 'App failed to click target at configured fast interval' >&2; exit 1; }
-echo "Target received $count clicks at 10 ms interval before stop"
+(( count >= 20 )) || { cat "$work/app.log" "$work/events"; echo 'Target received fewer than 20 clicks in three seconds; fast interval not established' >&2; exit 1; }
+echo "Target received $count clicks within three seconds after 10 ms interval input"
 touch "$work/signal"
 for _ in $(seq 1 30); do grep -q 'queue-test: posted in-process Carbon hotkey event status=0/0/0' "$work/app.log" && break; sleep 0.2; done
 grep -q 'queue-test: posted in-process Carbon hotkey event status=0/0/0' "$work/app.log" || { cat "$work/app.log"; echo 'In-process Carbon event was not posted successfully' >&2; exit 1; }

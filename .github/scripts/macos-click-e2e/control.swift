@@ -1,5 +1,6 @@
 import Foundation
 import ApplicationServices
+import AppKit
 
 guard AXIsProcessTrusted() else {
     fputs("Accessibility permission unavailable on disposable runner\n", stderr); exit(3)
@@ -58,7 +59,21 @@ func setFast(_ item: AXUIElement, _ depth: Int) -> Bool {
     let role = (attr(item, kAXRoleAttribute as CFString) as? String) ?? ""
     let title = (attr(item, kAXTitleAttribute as CFString) as? String) ?? ""
     if role == "AXTextField" && title == "Interval ms" {
-        return AXUIElementSetAttributeValue(item, kAXValueAttribute as CFString, "10" as CFString) == .success
+        guard let app = NSRunningApplication(processIdentifier: pid) else { return false }
+        _ = app.activate(options: [])
+        guard AXUIElementSetAttributeValue(item, kAXFocusedAttribute as CFString, kCFBooleanTrue) == .success else { return false }
+        Thread.sleep(forTimeInterval: 0.4)
+        func key(_ code: CGKeyCode, _ down: Bool, _ flags: CGEventFlags = []) {
+            guard let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down) else { exit(1) }
+            event.flags = flags; event.post(tap: .cghidEventTap)
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        key(55, true, [.maskCommand]); key(0, true, [.maskCommand]); key(0, false, [.maskCommand]); key(55, false)
+        key(18, true); key(18, false) // 1
+        key(29, true); key(29, false) // 0
+        key(48, true); key(48, false) // Tab commits the edit
+        Thread.sleep(forTimeInterval: 0.2)
+        return true
     }
     if let children = attr(item, kAXChildrenAttribute as CFString) as? [AXUIElement] {
         for child in children where setFast(child, depth + 1) { return true }
