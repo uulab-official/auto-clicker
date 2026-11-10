@@ -97,6 +97,22 @@ def dump_accessibility(pid):
         except (LookupError, RuntimeError, NotImplementedError):
             continue
 
+def dump_desktop():
+    print('Desktop accessibility applications:', flush=True)
+    for app in pyatspi.Registry.getDesktop(0):
+        try:
+            app_pid = app.get_process_id()
+            print(f'Application pid={app_pid} name={app.name!r}', flush=True)
+            for node in walk(app):
+                try:
+                    role = node.getRoleName()
+                    if node.name or role in ('file chooser', 'dialog', 'text', 'entry', 'push button'):
+                        print(f'  {role}: {node.name!r}', flush=True)
+                except (LookupError, RuntimeError, NotImplementedError):
+                    continue
+        except (LookupError, RuntimeError):
+            continue
+
 def wait_dialog(title, timeout=15):
     end = time.monotonic() + timeout
     while time.monotonic() < end:
@@ -125,6 +141,10 @@ def export(pid, path):
     while time.monotonic() < end and not path.is_file():
         time.sleep(.1)
     if not path.is_file():
+        print(f'After save chooser: focused title={focused_title()!r}', flush=True)
+        dump_windows()
+        dump_accessibility(int(sys.argv[2]))
+        dump_desktop()
         raise RuntimeError(f'Export did not create {path}')
     find(pid, lambda n: has_text(n, 'Settings exported.'), timeout=10)
     data = json.loads(path.read_text())
