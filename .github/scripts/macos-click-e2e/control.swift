@@ -55,10 +55,13 @@ func attr(_ item: AXUIElement, _ name: CFString) -> CFTypeRef? {
 }
 func press(_ item: AXUIElement, _ depth: Int) -> Bool {
     if depth > 45 { return false }
-    let role = (attr(item, kAXRoleAttribute as CFString) as? String) ?? ""
     let title = (attr(item, kAXTitleAttribute as CFString) as? String) ?? ""
     let desc = (attr(item, kAXDescriptionAttribute as CFString) as? String) ?? ""
-    if role == "AXButton" && (labels.contains(title) || labels.contains(desc)) {
+    // WebKit exposes aria-pressed buttons with different AX roles. Match only
+    // elements that actually support AXPress rather than assuming AXButton.
+    var actionsRef: CFArray?
+    let canPress = AXUIElementCopyActionNames(item, &actionsRef) == .success && ((actionsRef as? [String])?.contains(kAXPressAction as String) ?? false)
+    if canPress && (labels.contains(title) || labels.contains(desc)) {
         let current = matching; matching += 1
         if current == wanted { return AXUIElementPerformAction(item, kAXPressAction as CFString) == .success }
     }
@@ -84,4 +87,6 @@ for _ in 0..<60 {
     if press(root, 0) { print("Pressed \(labels) in public app PID \(pid)"); exit(0) }
     Thread.sleep(forTimeInterval: 1)
 }
-fputs("Could not invoke \(labels) in public app\n", stderr); exit(1)
+fputs("Could not invoke \(labels) in public app; accessibility tree follows\n", stderr)
+dump(root, 0)
+exit(1)
