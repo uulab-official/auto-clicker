@@ -1,1 +1,1 @@
-{"identifier":"default","description":"Main window permissions","windows":["main"],"permissions":["core:default"]}
+{"identifier":"default","description":"Main window permissions","windows":["main"],"permissions":["core:default","dialog:allow-open","dialog:allow-save","fs:allow-open","fs:allow-read","fs:allow-write-text-file"]}

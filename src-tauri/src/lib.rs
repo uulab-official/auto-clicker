@@ -353,6 +353,8 @@ pub fn run() {
             installing: false,
         })))
         .manage(PendingUpdate(Mutex::new(UpdateSlot::default())))
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             #[cfg(target_os = "linux")]

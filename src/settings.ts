@@ -21,14 +21,30 @@ function isStep(value: unknown): value is Step {
   const w = value as Record<string, unknown>;
   return w.kind === 'wait' && isInteger(w.duration_ms, 1, 86400000);
 }
+export function validateSettings(value: unknown): Settings | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const s = value as Record<string, unknown>;
+  if ((s.mode !== 'simple' && s.mode !== 'sequence') || !isClick(s.simple) || !Array.isArray(s.steps) || s.steps.length > 1000 || !s.steps.every(isStep) || !(s.repeat === null || isInteger(s.repeat, 1, 1000000))) return null;
+  if (s.startDelayMs !== undefined && (!isInteger(s.startDelayMs, 0, 60000) || s.startDelayMs % 1000 !== 0)) return null;
+  return { mode: s.mode, simple: s.simple, steps: s.steps, repeat: s.repeat as number | null, startDelayMs: (s.startDelayMs ?? 0) as number };
+}
 export function parseSettings(raw: string | null): Settings {
-  try {
-    if (!raw) return defaults();
-    const value: unknown = JSON.parse(raw);
-    if (!value || typeof value !== 'object') return defaults();
-    const s = value as Record<string, unknown>;
-    if ((s.mode !== 'simple' && s.mode !== 'sequence') || !isClick(s.simple) || !Array.isArray(s.steps) || s.steps.length > 1000 || !s.steps.every(isStep) || !(s.repeat === null || isInteger(s.repeat, 1, 1000000))) return defaults();
-    if (s.startDelayMs !== undefined && (!isInteger(s.startDelayMs, 0, 60000) || s.startDelayMs % 1000 !== 0)) return defaults();
-    return { ...s, startDelayMs: s.startDelayMs ?? 0 } as Settings;
-  } catch { return defaults(); }
+  try { return raw ? validateSettings(JSON.parse(raw)) ?? defaults() : defaults(); } catch { return defaults(); }
+}
+
+export const MAX_BACKUP_BYTES = 1024 * 1024;
+export function serializeBackup(settings: Settings): string {
+  const valid = validateSettings(settings);
+  if (!valid) throw new Error('Invalid settings');
+  return JSON.stringify({ format: 'auto-clicker-settings', version: 1, settings: valid }, null, 2) + '\n';
+}
+export function parseBackup(raw: string): Settings {
+  if (new TextEncoder().encode(raw).byteLength > MAX_BACKUP_BYTES) throw new Error('Backup too large');
+  const value: unknown = JSON.parse(raw);
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid backup');
+  const object = value as Record<string, unknown>;
+  const settings = object.format === undefined ? object : object.format === 'auto-clicker-settings' && object.version === 1 ? object.settings : null;
+  const valid = validateSettings(settings);
+  if (!valid) throw new Error('Invalid backup');
+  return valid;
 }

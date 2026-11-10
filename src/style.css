@@ -3,3 +3,4 @@
 .top-actions{display:flex;align-items:center;gap:12px}.language-label select{height:34px;width:auto;margin:0;padding:0 7px;font-size:11px;background:transparent}
 /* Give users time to place the pointer or switch to the target window. */
 .start-delay{margin-top:22px;padding-top:20px;border-top:1px solid #e9ece5}.start-delay input{max-width:110px}.start-delay .hint{max-width:440px;line-height:1.5}
+.backup-section{margin-top:22px;padding-top:20px;border-top:1px solid #e9ece5}.backup-section .hint{line-height:1.5}

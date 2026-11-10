@@ -1,8 +1,10 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
+import { open as openFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import './style.css';
-import { translateDom, type Language } from './i18n';
-import { defaultClick, defaults, parseSettings, type Settings, type Click, type Step, type Position } from './settings';
+import { translate, translateDom, type Language } from './i18n';
+import { defaultClick, defaults, parseSettings, parseBackup, serializeBackup, MAX_BACKUP_BYTES, type Settings, type Click, type Step, type Position } from './settings';
 import { StatusSnapshotGate, toggleDisabled, type Status } from './run-state';
 
 const key = 'open-clicker-settings-v1';
@@ -14,6 +16,7 @@ let status: Status = { running: false, completed_cycles: 0, error: null, shortcu
 let statusReady = false;
 let notice = '';
 let capturing = false;
+let fileBusy = false;
 type UpdateInfo = { version: string; current_version: string; notes: string | null };
 let updateInfo: UpdateInfo | null = null;
 let updateState: 'idle' | 'checking' | 'available' | 'current' | 'installing' | 'installed' | 'error' = 'idle';
@@ -52,21 +55,22 @@ function render() {
     ${status.shortcut_error ? `<div class="alert" role="alert"><strong>Emergency stop shortcut unavailable. Starting is disabled.</strong><p class="hint">${escape(status.shortcut_error)}</p></div>` : ''}
     ${notice || status.error ? `<div class="alert" role="alert">${escape(notice || status.error)}</div>` : ''}
     <div class="layout"><section class="workspace" aria-label="Click configuration">
-      <div class="tabs" role="group" aria-label="Click mode"><button type="button" aria-pressed="${!sequence}" data-action="mode" data-mode="simple">Simple click</button><button type="button" aria-pressed="${sequence}" data-action="mode" data-mode="sequence">Sequence</button></div>
-      <form id="config-form"><fieldset${disabled(status.running || capturing)}><legend class="sr-only">Click configuration</legend>
+      <div class="tabs" role="group" aria-label="Click mode"><button type="button" aria-pressed="${!sequence}" data-action="mode" data-mode="simple"${disabled(status.running || capturing || fileBusy)}>Simple click</button><button type="button" aria-pressed="${sequence}" data-action="mode" data-mode="sequence"${disabled(status.running || capturing || fileBusy)}>Sequence</button></div>
+      <form id="config-form"><fieldset${disabled(status.running || capturing || fileBusy)}><legend class="sr-only">Click configuration</legend>
       ${sequence ? `<div class="section-heading"><div><p class="eyebrow">YOUR SEQUENCE</p><h2>Steps</h2><p>Actions run from top to bottom, then repeat.</p></div><span class="count">${settings.steps.length} ${settings.steps.length === 1 ? 'STEP' : 'STEPS'}</span></div>
       <div class="steps">${settings.steps.map((step, i) => `<article class="step"><div class="step-header"><div class="step-title"><span class="step-number">${String(i + 1).padStart(2, '0')}</span><strong>${step.kind === 'click' ? 'Click' : 'Wait'}</strong></div><div class="step-actions"><button type="button" aria-label="Move step ${i+1} up" data-action="up" data-index="${i}"${disabled(i === 0)}>↑</button><button type="button" aria-label="Move step ${i+1} down" data-action="down" data-index="${i}"${disabled(i === settings.steps.length - 1)}>↓</button><button type="button" aria-label="Duplicate step ${i+1}" data-action="duplicate" data-index="${i}"${disabled(settings.steps.length >= 1000)}>⧉</button><button type="button" aria-label="Remove step ${i+1}" data-action="remove" data-index="${i}">×</button></div></div>${step.kind === 'click' ? clickFields(step, String(i)) : `<label class="wait-field">Wait duration <span class="unit">ms</span><input type="number" min="1" max="86400000" step="1" data-index="${i}" data-field="duration_ms" value="${escape(step.duration_ms)}" required></label>`}</article>`).join('') || '<div class="empty">Your sequence is empty. Add a click or a wait to get started.</div>'}</div>
       <div class="add-actions"><button type="button" class="button secondary" data-action="add-click"${disabled(settings.steps.length >= 1000)}>+ Add click</button><button type="button" class="button secondary" data-action="add-wait"${disabled(settings.steps.length >= 1000)}>+ Add wait</button></div>` : `<div class="section-heading"><div><p class="eyebrow">SINGLE ACTION</p><h2>Click settings</h2><p>Choose how and where to click.</p></div></div><div class="simple-fields">${clickFields(settings.simple, 'simple')}</div>`}
       <div class="repeat-section"><div><span class="label">Repeat</span><p class="hint">Choose when the run should stop.</p></div><div class="repeat-controls"><label class="radio"><input type="radio" name="repeatMode" value="forever"${checked(settings.repeat === null)}> Until stopped</label><label class="radio"><input type="radio" name="repeatMode" value="count"${checked(settings.repeat !== null)}> <input aria-label="Number of repetitions" id="repeat-count" type="number" min="1" max="1000000" step="1" required value="${escape(settings.repeat ?? 1)}"${disabled(settings.repeat === null)}> times</label></div></div>
       <div class="start-delay"><label for="start-delay">Start delay <span class="unit">seconds</span></label><input id="start-delay" type="number" min="0" max="60" step="1" required value="${escape(settings.startDelayMs / 1000)}"><p class="hint">Wait before the first click so you can switch windows. You can stop during the wait.</p></div>
+      <div class="backup-section"><span class="label">Settings backup</span><p class="hint">Export your settings or replace them with a saved backup.</p><div class="add-actions"><button type="button" class="button secondary" data-action="export-settings">Export settings</button><button type="button" class="button secondary" data-action="import-settings">Import settings</button></div></div>
       </fieldset></form></section>
       <aside class="control-panel"><div><p class="eyebrow">RUN CONTROL</p><h2>${status.running ? 'In progress' : 'Ready when you are'}</h2><p>${status.running ? `Completed cycles: ${status.completed_cycles}` : 'Review your settings, then start clicking.'}</p></div>
-      <button type="button" class="button primary ${status.running ? 'stop' : ''}" data-action="toggle"${disabled(toggleDisabled(status, statusReady, capturing, updateState === 'installing'))}>${status.running ? '<span aria-hidden="true">■</span> Stop clicking' : '<span aria-hidden="true">▶</span> Start clicking'}</button>
+      <button type="button" class="button primary ${status.running ? 'stop' : ''}" data-action="toggle"${disabled(toggleDisabled(status, statusReady, capturing || fileBusy, updateState === 'installing'))}>${status.running ? '<span aria-hidden="true">■</span> Stop clicking' : '<span aria-hidden="true">▶</span> Start clicking'}</button>
       <div class="shortcut"><span>Global emergency stop</span><kbd>Ctrl</kbd><span>+</span><kbd>Shift</kbd><span>+</span><kbd>F8</kbd></div><p class="safety">You can stop a run at any time with the shortcut. Check system permissions if clicking is unavailable.</p>
       <div class="updates"><span class="label">App updates</span>
       <p class="hint">${updateState === 'checking' ? 'Checking for updates…' : updateState === 'installing' ? 'Installing update…' : updateState === 'current' ? 'You have the latest version.' : updateState === 'installed' ? 'Update installed. Restart the app to use it.' : updateState === 'available' && updateInfo ? `Version ${escape(updateInfo.version)} is available.` : updateState === 'error' ? escape(updateError) : 'Updates are checked on startup. Installation requires your choice.'}</p>
       ${updateState === 'available' && updateInfo?.notes ? `<p class="update-notes">${escape(updateInfo.notes)}</p>` : ''}
-      ${updateState === 'available' ? `<button type="button" class="button secondary update-button" data-action="install-update"${disabled(status.running)}>Install update</button>` : `<button type="button" class="button secondary update-button" data-action="check-update"${disabled(updateState === 'checking' || updateState === 'installing' || updateState === 'installed')}>Check for updates</button>`}</div></aside></div>
+      ${updateState === 'available' ? `<button type="button" class="button secondary update-button" data-action="install-update"${disabled(status.running || fileBusy)}>Install update</button>` : `<button type="button" class="button secondary update-button" data-action="check-update"${disabled(fileBusy || updateState === 'checking' || updateState === 'installing' || updateState === 'installed')}>Check for updates</button>`}</div></aside></div>
     <footer><span>Built for the way you work.</span><span>Settings stay on this device.</span></footer></main>`;
   document.documentElement.lang = language;
   translateDom(app, language);
@@ -83,6 +87,22 @@ function cloneStep(step: Step): Step {
   return step.kind === 'click'
     ? { ...step, position: step.position ? { ...step.position } : null }
     : { ...step };
+}
+async function readBackup(path: string): Promise<string> {
+  const file = await openFile(path, { read: true });
+  try {
+    // Read at most one byte beyond the limit, even if the file grows while reading.
+    const bytes = new Uint8Array(MAX_BACKUP_BYTES + 1);
+    let offset = 0;
+    while (offset < bytes.length) {
+      const count = await file.read(bytes.subarray(offset));
+      if (count === null) break;
+      if (count <= 0) throw new Error('Unable to read backup');
+      offset += count;
+    }
+    if (offset > MAX_BACKUP_BYTES) throw new Error('Backup too large');
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, offset));
+  } finally { await file.close(); }
 }
 function changeInput(target: HTMLInputElement | HTMLSelectElement) {
   if (target instanceof HTMLInputElement && target.type === 'number' && (!target.value || !target.validity.valid)) return;
@@ -105,8 +125,30 @@ app.addEventListener('input', e => { const t = e.target; if (t instanceof HTMLIn
 app.addEventListener('change', e => { const t = e.target; if (t instanceof HTMLSelectElement && t.id === 'language') { if (t.value === 'en' || t.value === 'ko' || t.value === 'ja') { language = t.value; try { localStorage.setItem('open-clicker-language', language); } catch { /* selection lasts for this session */ } render(); } return; } if (t instanceof HTMLSelectElement || (t instanceof HTMLInputElement && t.type === 'radio')) changeInput(t); });
 app.addEventListener('click', async e => {
   const button = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-action]');
-  if (!button) return;
+  if (!button || fileBusy) return;
   const { action, index = '' } = button.dataset;
+  if (action === 'export-settings' || action === 'import-settings') {
+    if (status.running || capturing || updateState === 'installing') return;
+    fileBusy = true; notice = ''; render();
+    try {
+      const filters = [{ name: 'JSON', extensions: ['json'] }];
+      if (action === 'export-settings') {
+        const path = await saveDialog({ title: translate('Export settings', language), defaultPath: 'auto-clicker-settings.json', filters });
+        if (path) { await writeTextFile(path, serializeBackup(settings)); notice = 'Settings exported.'; }
+      } else {
+        const path = await openDialog({ title: translate('Import settings', language), multiple: false, directory: false, filters });
+        if (path) {
+          const imported = parseBackup(await readBackup(path));
+          // Persist first so an unavailable store cannot silently replace a usable configuration.
+          localStorage.setItem(key, JSON.stringify(imported));
+          settings = imported; notice = 'Settings imported.';
+        }
+      }
+    } catch {
+      notice = action === 'export-settings' ? 'Could not export settings. Please try again.' : 'Could not import settings. Check the file and try again.';
+    } finally { fileBusy = false; render(); }
+    return;
+  }
   if (action === 'check-update') {
     updateState = 'checking'; render();
     try { updateInfo = await invoke<UpdateInfo | null>('check_update'); updateState = updateInfo ? 'available' : 'current'; }
@@ -121,7 +163,7 @@ app.addEventListener('click', async e => {
     render(); return;
   }
   if (action === 'toggle') {
-    if (toggleDisabled(status, statusReady, capturing, updateState === 'installing')) return;
+    if (toggleDisabled(status, statusReady, capturing || fileBusy, updateState === 'installing')) return;
     notice = '';
     if (status.running) { try { await invoke('stop_run'); } catch (error) { notice = String(error); render(); } return; }
     const form = document.querySelector<HTMLFormElement>('#config-form')!;
