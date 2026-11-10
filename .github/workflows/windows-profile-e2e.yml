@@ -1,0 +1,24 @@
+name: Windows isolated settings backup verification
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - run: npm run tauri build -- --no-bundle
+      - name: Exercise native backup dialogs on isolated Windows
+        shell: pwsh
+        run: .github/scripts/windows-profile-e2e/run.ps1
