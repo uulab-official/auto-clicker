@@ -53,7 +53,7 @@ class VerifyReleaseTest(unittest.TestCase):
             config.write_text(json.dumps({'version': '0.1.2', 'plugins': {'updater': {'pubkey': base64.b64encode(b'key').decode()}}}))
             manifest.write_text(json.dumps({'version': '0.1.2', 'platforms': platforms}))
             responses = [json.dumps({'databaseId': 3}).encode(),
-                         json.dumps({'draft': True, 'assets': [
+                         json.dumps({'draft': True, 'tag_name': 'v0.1.2', 'assets': [
                              {'id': i, 'name': f'asset{i}',
                               'browser_download_url': f'https://github.com/owner/repo/releases/download/v0.1.2/asset{i}'}
                              for i in range(1, 7)]}).encode()]

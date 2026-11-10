@@ -22,7 +22,7 @@ def walk(node, depth=0):
         if not probe and not opened_more and any(name.endswith(label) for label in more_names):
             action = node.queryAction()
             for index in range(action.nActions):
-                if action.getName(index).lower() in ('click', 'press', 'activate') and action.doAction(index):
+                if action.getName(index).lower() in ('', 'click', 'press', 'activate') and action.doAction(index):
                     opened_more = True
                     print('Opened target application More options:', name, flush=True)
                     return False

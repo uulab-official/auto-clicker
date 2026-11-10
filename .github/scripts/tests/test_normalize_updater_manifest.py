@@ -34,6 +34,21 @@ class NormalizeTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             module.normalize(self.manifest, self.release, self.repo, self.tag)
 
+    def test_actual_github_draft_metadata_generates_tagged_public_url(self):
+        # Shape observed in the authenticated v0.1.9 draft response.
+        name = 'Auto.Clicker_0.1.9_amd64.AppImage'
+        asset = {'id': 123, 'name': name, 'browser_download_url':
+                 'https://github.com/uulab-official/auto-clicker/releases/download/'
+                 'untagged-c2bd15c18f318180127e/' + name}
+        repo, tag = 'uulab-official/auto-clicker', 'v0.1.9'
+        api = f'https://api.github.com/repos/{repo}/releases/assets/123'
+        public = f'https://github.com/{repo}/releases/download/{tag}/{name}'
+        self.assertEqual(module.verify_release.resolve_asset(api, [asset], repo, tag)[2], public)
+        self.assertEqual(module.verify_release.resolve_asset(public, [asset], repo, tag)[1], api)
+        asset['browser_download_url'] = asset['browser_download_url'].replace('untagged-c2bd15c18f318180127e', 'untagged-evil')
+        with self.assertRaises(ValueError):
+            module.verify_release.resolve_asset(api, [asset], repo, tag)
+
     def test_rejects_published_or_wrong_tag(self):
         for field, value in [('draft', False), ('tag_name', 'v0.1.3')]:
             release = dict(self.release, **{field: value})

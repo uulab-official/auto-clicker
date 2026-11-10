@@ -17,7 +17,12 @@ def resolve_asset(url, assets, repository, tag):
     for asset in assets:
         api = f'https://api.github.com/repos/{repository}/releases/assets/{asset["id"]}'
         public = f'https://github.com/{repository}/releases/download/{tag}/{quote(asset["name"], safe="")}'
-        if asset.get('browser_download_url') != public:
+        draft_public = re.compile(
+            rf'https://github\.com/{re.escape(repository)}/releases/download/'
+            rf'untagged-[0-9a-f]{{20}}/{re.escape(quote(asset["name"], safe=""))}'
+        )
+        metadata_url = asset.get('browser_download_url', '')
+        if metadata_url != public and not draft_public.fullmatch(metadata_url):
             raise ValueError('Draft asset has an unexpected public download URL')
         if url == api or url == public:
             matches.append((asset, api, public))
@@ -43,8 +48,8 @@ def main():
     release = json.loads(subprocess.check_output([
         'gh', 'api', f'repos/{repository}/releases/{release_id}'
     ]))
-    if not release.get('draft'):
-        raise ValueError('Release must remain a draft during verification')
+    if not release.get('draft') or release.get('tag_name') != tag:
+        raise ValueError('Release must remain the matching draft during verification')
     expected = ('darwin-aarch64', 'darwin-x86_64', 'linux-x86_64', 'windows-x86_64')
     missing = set(expected) - set(manifest['platforms'])
     if missing:
