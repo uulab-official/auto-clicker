@@ -13,4 +13,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Verify actual public app on the disposable macOS VM
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: bash .github/scripts/macos-click-e2e/run.sh

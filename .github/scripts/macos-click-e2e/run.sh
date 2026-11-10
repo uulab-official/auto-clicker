@@ -13,9 +13,19 @@ cleanup() {
 trap cleanup EXIT
 mkdir -p "$work/mount" "$work/install"
 case "$(uname -m)" in arm64) arch=aarch64 ;; x86_64) arch=x64 ;; *) exit 1 ;; esac
-# The shared resolver requires a later target version; it downloads only the
-# first version, verifies its release identity and checks its SHA-256 digest.
-python3 .github/scripts/public-update-e2e/release_info.py 0.1.3 0.1.4 "_${arch}.dmg" "$work/public.dmg"
+# Authenticated metadata avoids shared-runner anonymous GitHub API limits.
+gh api repos/uulab-official/auto-clicker/releases/tags/v0.1.3 > "$work/release.json"
+python3 - "$work/release.json" "$arch" "$work/digest" <<'PY'
+import importlib.util, json, pathlib, sys
+spec = importlib.util.spec_from_file_location('release_info', '.github/scripts/public-update-e2e/release_info.py')
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+release = json.loads(pathlib.Path(sys.argv[1]).read_text())
+_, digest = module.select_baseline_asset(release, '0.1.3', f'_{sys.argv[2]}.dmg')
+pathlib.Path(sys.argv[3]).write_text(digest)
+PY
+gh release download v0.1.3 --repo uulab-official/auto-clicker --pattern "*_${arch}.dmg" --output "$work/public.dmg"
+[[ "$(shasum -a 256 "$work/public.dmg" | awk '{print $1}')" == "$(cat "$work/digest")" ]] || { echo 'Public installer SHA-256 mismatch' >&2; exit 1; }
 codesign --verify --strict "$work/public.dmg"
 xcrun stapler validate "$work/public.dmg"
 hdiutil attach "$work/public.dmg" -nobrowse -readonly -mountpoint "$work/mount" -quiet
