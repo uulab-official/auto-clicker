@@ -71,6 +71,20 @@ function Invoke-Button([string]$name, [int]$index = 0) {
   } while ((Get-Date) -lt $deadline)
   throw "Enabled button '$name' index $index could not be invoked"
 }
+function Wait-AppText([string]$text) {
+  $deadline = (Get-Date).AddSeconds(20)
+  do {
+    try {
+      $window = [System.Windows.Automation.AutomationElement]::FromHandle($app.MainWindowHandle)
+      $nodes = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+      foreach ($node in $nodes) {
+        try { if ($node.Current.Name -like "*$text*") { Write-Host "Observed app text: $text"; return } } catch { }
+      }
+    } catch { }
+    Start-Sleep -Milliseconds 250
+  } while ((Get-Date) -lt $deadline)
+  throw "App did not show expected text: $text"
+}
 try {
   $app = Start-Process $exe -PassThru
   $deadline = (Get-Date).AddSeconds(90)
@@ -140,13 +154,16 @@ try {
   # Configure two positions in the public UI and check two complete cycles in
   # the target's mouse event log. All input remains inside this disposable VM.
   Invoke-Button 'Sequence'
+  # UIA Invoke may return before the WebView handles the tab click. Wait for
+  # the sequence view, otherwise the next action can capture the simple step.
+  Wait-AppText 'Actions run from top to bottom, then repeat.'
   Invoke-Button 'Pick position'
   [TestInput]::SetCursorPos(($rect.Left + 70),($rect.Top + 100)) | Out-Null
-  Start-Sleep -Seconds 4
+  Wait-AppText "Position captured: $(($rect.Left + 70)), $(($rect.Top + 100))."
   Invoke-Button '+ Add click'
   Invoke-Button 'Pick position' 1
   [TestInput]::SetCursorPos(($rect.Left + 160),($rect.Top + 100)) | Out-Null
-  Start-Sleep -Seconds 4
+  Wait-AppText "Position captured: $(($rect.Left + 160)), $(($rect.Top + 100))."
   Remove-Item -LiteralPath $log -ErrorAction SilentlyContinue
   Invoke-Button 'Start clicking'
   $deadline = (Get-Date).AddSeconds(25)
