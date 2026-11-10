@@ -33,6 +33,7 @@ ditto "$work/mount/Auto Clicker.app" "$work/install/Auto Clicker.app"
 hdiutil detach "$work/mount" -quiet
 swiftc .github/scripts/macos-click-e2e/target.swift -o "$work/target"
 swiftc .github/scripts/macos-click-e2e/control.swift -o "$work/control"
+swiftc .github/scripts/macos-click-e2e/carbon-control.swift -o "$work/carbon-control"
 "$work/target" "$work/events" >"$work/target.log" 2>&1 & target_pid=$!
 "$work/install/Auto Clicker.app/Contents/MacOS/auto-clicker" >"$work/app.log" 2>&1 & app_pid=$!
 for _ in $(seq 1 30); do
@@ -51,6 +52,12 @@ for _ in $(seq 1 20); do
   sleep 1
 done
 (( count >= 2 )) || { "$work/control" dump "$app_pid" || true; cat "$work/app.log" "$work/target.log" "$work/events"; echo "Expected at least two target clicks, received $count" >&2; exit 1; }
+"$work/carbon-control" >"$work/carbon.log" 2>&1 & carbon_pid=$!
+for _ in $(seq 1 30); do grep -q 'Carbon control ready' "$work/carbon.log" && break; kill -0 "$carbon_pid" 2>/dev/null || break; sleep 0.1; done
+"$work/control" hotkey-control
+sleep 1
+kill "$carbon_pid" 2>/dev/null || true
+cat "$work/carbon.log"
 "$work/control" monitor >"$work/keyboard.log" 2>&1 & monitor_pid=$!
 for _ in $(seq 1 30); do grep -q 'Keyboard monitor ready' "$work/keyboard.log" && break; kill -0 "$monitor_pid" 2>/dev/null || break; sleep 0.1; done
 "$work/control" stop

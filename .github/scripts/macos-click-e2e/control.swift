@@ -28,7 +28,7 @@ if args[1] == "move", args.count == 4, let x = Double(args[2]), let y = Double(a
     guard CGWarpMouseCursorPosition(point) == .success else { exit(1) }
     exit(0)
 }
-if args[1] == "stop" {
+if args[1] == "stop" || args[1] == "hotkey-control" {
     // Send modifier key transitions as well as the F8 key. Flags on F8 alone
     // do not establish modifier state for every global shortcut listener.
     func key(_ code: CGKeyCode, _ down: Bool, _ flags: CGEventFlags) {
@@ -38,7 +38,8 @@ if args[1] == "stop" {
         Thread.sleep(forTimeInterval: 0.08)
     }
     key(59, true, [.maskControl]); key(56, true, [.maskControl, .maskShift])
-    key(100, true, [.maskControl, .maskShift]); key(100, false, [.maskControl, .maskShift])
+    let mainKey: CGKeyCode = args[1] == "stop" ? 100 : 98
+    key(mainKey, true, [.maskControl, .maskShift]); key(mainKey, false, [.maskControl, .maskShift])
     key(56, false, [.maskControl]); key(59, false, [])
     exit(0)
 }
