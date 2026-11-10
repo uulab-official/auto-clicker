@@ -12,7 +12,7 @@ import tempfile
 
 def main():
     repository = os.environ['GH_REPO']
-    tag = os.environ['GITHUB_REF_NAME']
+    tag = os.environ.get('RELEASE_TAG') or os.environ['GITHUB_REF_NAME']
     if not re.fullmatch(r'v\d+\.\d+\.\d+', tag):
         raise ValueError('A stable version tag is required')
     config = json.loads(Path(os.environ.get('RELEASE_CONFIG_PATH', 'src-tauri/tauri.conf.json')).read_text())

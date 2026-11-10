@@ -4,26 +4,34 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      release_tag:
+        required: true
+        type: string
+      release_sha:
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.release_tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   build:
     # v0.1.0 is assembled manually from locally notarized macOS artifacts and
     # CI-built Linux/Windows artifacts. All later tags require CI macOS signing.
-    if: github.event_name != 'push' || github.ref != 'refs/tags/v0.1.0'
+    if: inputs.release_tag != '' || github.event_name != 'push' || github.ref != 'refs/tags/v0.1.0'
     permissions:
       contents: write
     strategy:
       fail-fast: true
       # Serialize release uploads to merge the manifest safely; manual builds
       # do not write to a release and can run simultaneously.
-      max-parallel: ${{ github.event_name == 'push' && 1 || 4 }}
+      max-parallel: ${{ (inputs.release_tag != '' || github.event_name == 'push') && 1 || 4 }}
       matrix:
         include:
           - os: macos-latest
@@ -41,6 +49,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.release_sha || github.sha }}
       - uses: actions/setup-node@v7
         with:
           node-version: 20
@@ -57,18 +67,20 @@ jobs:
         shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+          IS_TAG_RELEASE: ${{ inputs.release_tag != '' || github.event_name == 'push' }}
         run: |
           node <<'NODE'
           const fs = require('fs');
           for (const key of ['TAURI_SIGNING_PRIVATE_KEY']) {
             if (!process.env[key]?.trim()) throw new Error(`${key} is not configured`);
           }
-          const tag = process.env.GITHUB_REF_NAME;
+          const tag = process.env.RELEASE_TAG;
           const config = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
           if (!config.plugins?.updater?.pubkey?.trim()) throw new Error('Updater public key is missing');
           const version = config.version;
           const npmVersion = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
-          if (version !== npmVersion || (process.env.GITHUB_EVENT_NAME === 'push' &&
+          if (version !== npmVersion || (process.env.IS_TAG_RELEASE === 'true' &&
               (!/^v\d+\.\d+\.\d+$/.test(tag) || tag !== `v${version}`))) {
             throw new Error('Versions must match; release tags must be vMAJOR.MINOR.PATCH');
           }
@@ -87,7 +99,7 @@ jobs:
           APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
         run: |
           set -euo pipefail
-          if [[ -z "$APPLE_CERTIFICATE" && "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+          if [[ -z "$APPLE_CERTIFICATE" && "$GITHUB_EVENT_NAME" == "workflow_dispatch" && -z "${{ inputs.release_tag }}" ]]; then
             echo '::warning::macOS signing credentials are absent; this is an unsigned verification build.'
             exit 0
           fi
@@ -102,27 +114,33 @@ jobs:
             printf '%s<<%s\n%s\n%s\n' "$name" "$delimiter" "${!name}" "$delimiter" >> "$GITHUB_ENV"
           done
       - name: Build and upload signed artifacts to draft release
-        if: github.event_name == 'push'
+        if: inputs.release_tag != '' || github.event_name == 'push'
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: Auto Clicker ${{ github.ref_name }}
+          tagName: ${{ inputs.release_tag || github.ref_name }}
+          releaseName: ${{ inputs.release_tag != '' && format('Auto Clicker {0} [auto {1}]', inputs.release_tag, inputs.release_sha) || format('Auto Clicker {0}', github.ref_name) }}
           releaseBody: |
             Download the installer for your platform below.
 
             **Windows:** These installers are not signed with a Windows publisher certificate. Microsoft Defender SmartScreen or organization policies may warn about or block the installer.
 
             macOS builds are signed with Developer ID and notarized by Apple. Linux AppImage builds support in-app updates.
+
+            **macOS emergency stop:** Ctrl+Shift+Escape is available as an additional shortcut when registered. A physical-keyboard failure was reported with Ctrl+Shift+F8 and its cause remains unconfirmed. Test your stop controls before unattended use.
+
+            **한국어:** macOS의 Ctrl+Shift+F8 물리 키 중지 실패가 보고되었고 원인은 아직 확인되지 않았습니다. 등록된 Ctrl+Shift+Escape를 대체 키로 사용할 수 있으며 자리를 비우기 전 중지 기능을 확인하세요. Windows 설치 파일은 미서명 상태입니다.
+
+            **日本語:** macOS の Ctrl+Shift+F8 の物理キーで停止できない報告があり、原因は未確認です。登録された Ctrl+Shift+Escape を代替として使用でき、無人で使う前に停止操作を確認してください。Windows のインストーラーは未署名です。
           releaseDraft: true
           prerelease: false
           args: --config "${{ github.workspace }}/release.conf.json" ${{ matrix.args }}
 
       - name: Build signed artifacts for verification
-        if: github.event_name == 'workflow_dispatch'
+        if: inputs.release_tag == '' && github.event_name == 'workflow_dispatch'
         uses: tauri-apps/tauri-action@v1
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -160,22 +178,23 @@ jobs:
           if (( count != 1 )); then echo "Expected one notarized macOS DMG, found $count" >&2; exit 1; fi
 
       - name: Replace draft macOS disk image with notarized asset
-        if: github.event_name == 'push' && runner.os == 'macOS'
+        if: (inputs.release_tag != '' || github.event_name == 'push') && runner.os == 'macOS'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
           set -euo pipefail
-          if [[ "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)" != true ]]; then
+          if [[ "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" != true ]]; then
             echo 'Refusing to modify a release that is not a draft.' >&2
             exit 1
           fi
           while IFS= read -r -d '' dmg; do
-            gh release upload "$GITHUB_REF_NAME" "$dmg" --clobber
+            gh release upload "$RELEASE_TAG" "$dmg" --clobber
           done < <(find src-tauri/target -path '*/release/bundle/dmg/*.dmg' -type f -print0)
 
       - name: Preserve notarized macOS disk image
-        if: github.event_name == 'workflow_dispatch' && runner.os == 'macOS' && env.APPLE_API_KEY_PATH != ''
+        if: inputs.release_tag == '' && github.event_name == 'workflow_dispatch' && runner.os == 'macOS' && env.APPLE_API_KEY_PATH != ''
         uses: actions/upload-artifact@v7
         with:
           name: notarized-${{ matrix.id }}
@@ -184,7 +203,7 @@ jobs:
           compression-level: 0
 
       - name: Verify locally generated updater signatures
-        if: github.event_name == 'workflow_dispatch'
+        if: inputs.release_tag == '' && github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
           set -euo pipefail
@@ -199,7 +218,7 @@ jobs:
           if (( count == 0 )); then echo 'No updater signatures found' >&2; exit 1; fi
 
       - name: Preserve updater payloads and signatures
-        if: github.event_name == 'workflow_dispatch'
+        if: inputs.release_tag == '' && github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v7
         with:
           name: updater-${{ matrix.id }}
@@ -210,7 +229,7 @@ jobs:
           compression-level: 0
 
   validate:
-    if: github.event_name == 'push'
+    if: inputs.release_tag != '' || github.event_name == 'push'
     needs: build
     runs-on: ubuntu-latest
     # GitHub only exposes draft releases to identities with push access.
@@ -218,6 +237,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.release_sha || github.sha }}
       - uses: dtolnay/rust-toolchain@stable
       - name: Build signature verifier
         run: cargo build --locked --manifest-path .github/scripts/updater-verify/Cargo.toml
@@ -226,6 +247,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
-          gh release download "$GITHUB_REF_NAME" --pattern latest.json --dir "$RUNNER_TEMP"
+          gh release download "$RELEASE_TAG" --pattern latest.json --dir "$RUNNER_TEMP"
           python3 .github/scripts/verify-release.py "$RUNNER_TEMP/latest.json"

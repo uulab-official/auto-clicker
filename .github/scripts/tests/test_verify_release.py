@@ -30,7 +30,11 @@ class VerifyReleaseTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'windows-x86_64-nsis'):
             self.run_verification(bad_version=True)
 
-    def run_verification(self, bad_extra=False, missing=False, bad_version=False):
+    def test_explicit_release_tag_takes_precedence_for_reusable_workflow(self):
+        with mock.patch.dict(os.environ, {'RELEASE_TAG': 'v0.1.2'}):
+            self.assertEqual(self.run_verification(ref_name='main'), 6)
+
+    def run_verification(self, bad_extra=False, missing=False, bad_version=False, ref_name='v0.1.2'):
         keys = ['darwin-aarch64', 'darwin-x86_64', 'linux-x86_64', 'windows-x86_64',
                 'windows-x86_64-nsis', 'linux-x86_64-deb']
         signature = base64.b64encode(b'trusted comment: version:0.1.2\n').decode()
@@ -50,7 +54,7 @@ class VerifyReleaseTest(unittest.TestCase):
             manifest.write_text(json.dumps({'version': '0.1.2', 'platforms': platforms}))
             responses = [json.dumps({'databaseId': 3}).encode(),
                          json.dumps({'draft': True, 'assets': [{'id': i} for i in range(1, 7)]}).encode()]
-            with mock.patch.dict(os.environ, {'GH_REPO': 'owner/repo', 'GITHUB_REF_NAME': 'v0.1.2',
+            with mock.patch.dict(os.environ, {'GH_REPO': 'owner/repo', 'GITHUB_REF_NAME': ref_name,
                                              'RELEASE_CONFIG_PATH': str(config)}), \
                  mock.patch.object(sys, 'argv', ['verify-release.py', str(manifest)]), \
                  mock.patch.object(Path, 'is_file', return_value=True), \
