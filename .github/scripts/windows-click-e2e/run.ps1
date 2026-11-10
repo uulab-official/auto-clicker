@@ -43,6 +43,31 @@ $targetOut = Join-Path $tmp 'target.stdout'
 $targetErr = Join-Path $tmp 'target.stderr'
 $targetProcess = Start-Process powershell.exe -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File',"`"$target`"", "`"$log`"" -RedirectStandardOutput $targetOut -RedirectStandardError $targetErr -PassThru
 $app = $null
+function Find-Buttons([string]$name) {
+  $window = [System.Windows.Automation.AutomationElement]::FromHandle($app.MainWindowHandle)
+  $nodes = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+  foreach ($node in $nodes) {
+    try {
+      if ($node.Current.Name -eq $name -and $node.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and $node.Current.IsEnabled) { $node }
+    } catch [System.Windows.Automation.ElementNotAvailableException] { continue }
+  }
+}
+function Invoke-Button([string]$name, [int]$index = 0) {
+  $deadline = (Get-Date).AddSeconds(10)
+  do {
+    try {
+      $buttons = @(Find-Buttons $name)
+      if ($buttons.Count -gt $index) {
+        $button = $buttons[$index]
+        $pattern = $null
+        if ($button.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pattern)) { $pattern.Invoke(); return }
+        if ($button.TryGetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern, [ref]$pattern)) { $pattern.Toggle(); return }
+      }
+    } catch { }
+    Start-Sleep -Milliseconds 250
+  } while ((Get-Date) -lt $deadline)
+  throw "Enabled button '$name' index $index could not be invoked"
+}
 try {
   $app = Start-Process $exe -PassThru
   $deadline = (Get-Date).AddSeconds(90)
@@ -82,7 +107,7 @@ try {
   $under = [TestInput]::WindowFromPoint($point)
   Write-Host "Cursor=$($point.X),$($point.Y); window under pointer=$under"
   if ($under -ne $targetProcess.MainWindowHandle) { throw 'Target window is not under the pointer' }
-  $start.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+  Invoke-Button 'Start clicking'
   $deadline = (Get-Date).AddSeconds(20)
   do {
     Start-Sleep -Milliseconds 500
@@ -109,28 +134,6 @@ try {
   if ($stopped -ne $after) { throw "Clicks continued after emergency stop: $stopped to $after" }
   Write-Host "Global Ctrl+Shift+F8 stopped actual input; count remained $after"
 
-  function Find-Buttons([string]$name) {
-    $window = [System.Windows.Automation.AutomationElement]::FromHandle($app.MainWindowHandle)
-    $nodes = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
-    foreach ($node in $nodes) {
-      try {
-        if ($node.Current.Name -eq $name -and $node.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and $node.Current.IsEnabled) { $node }
-      } catch [System.Windows.Automation.ElementNotAvailableException] { continue }
-    }
-  }
-  function Invoke-Button([string]$name, [int]$index = 0) {
-    $buttons = @(Find-Buttons $name)
-    if ($buttons.Count -le $index) { throw "Enabled button '$name' index $index unavailable; found $($buttons.Count)" }
-    $button = $buttons[$index]
-    $pattern = $null
-    if ($button.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pattern)) {
-      $pattern.Invoke()
-    } elseif ($button.TryGetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern, [ref]$pattern)) {
-      $pattern.Toggle()
-    } else {
-      throw "Button '$name' supports neither Invoke nor Toggle"
-    }
-  }
   # Configure two positions in the public UI and check two complete cycles in
   # the target's mouse event log. All input remains inside this disposable VM.
   Invoke-Button 'Sequence'
