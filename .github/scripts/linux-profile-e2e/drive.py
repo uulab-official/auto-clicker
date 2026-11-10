@@ -93,7 +93,11 @@ def dump_accessibility(pid):
     for node in nodes_for(pid):
         try:
             if node.name:
-                print(f'  {node.getRoleName()}: {node.name!r}', flush=True)
+                try:
+                    enabled = node.getState().contains(pyatspi.STATE_ENABLED)
+                except (LookupError, RuntimeError, NotImplementedError):
+                    enabled = '?'
+                print(f'  {node.getRoleName()}: {node.name!r} enabled={enabled}', flush=True)
         except (LookupError, RuntimeError, NotImplementedError):
             continue
 
@@ -145,6 +149,11 @@ def export(pid, path):
         dump_windows()
         dump_accessibility(int(sys.argv[2]))
         dump_desktop()
+        if len(sys.argv) > 4:
+            portal_log = pathlib.Path(sys.argv[4])
+            if portal_log.exists():
+                print('File chooser portal D-Bus trace:', flush=True)
+                print(portal_log.read_text(errors='replace'), flush=True)
         raise RuntimeError(f'Export did not create {path}')
     find(pid, lambda n: has_text(n, 'Settings exported.'), timeout=10)
     data = json.loads(path.read_text())

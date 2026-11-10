@@ -6,9 +6,11 @@ ps -eo args= | grep -F -- "Xvfb $DISPLAY " | grep -qv grep || { echo 'DISPLAY is
 work=$(mktemp -d)
 app_pid=''
 wm_pid=''
+portal_pid=''
 cleanup() {
   [[ -z "$app_pid" ]] || kill "$app_pid" 2>/dev/null || true
   [[ -z "$wm_pid" ]] || kill "$wm_pid" 2>/dev/null || true
+  [[ -z "$portal_pid" ]] || kill "$portal_pid" 2>/dev/null || true
   rm -rf "$work"
 }
 trap cleanup EXIT
@@ -22,6 +24,8 @@ for _ in $(seq 1 30); do
   sleep 0.2
 done
 kill -0 "$wm_pid" 2>/dev/null || { cat "$work/openbox.log"; echo 'Openbox did not stay running' >&2; exit 1; }
+/usr/bin/dbus-monitor --session "interface='org.freedesktop.portal.FileChooser'" >"$work/filechooser-dbus.log" 2>&1 & portal_pid=$!
+sleep 0.2
 /usr/bin/python3 .github/scripts/linux-profile-e2e/drive.py prepare "$work/files"
 src-tauri/target/release/auto-clicker >"$work/app.log" 2>&1 & app_pid=$!
 for _ in $(seq 1 60); do
@@ -30,5 +34,5 @@ for _ in $(seq 1 60); do
   sleep 1
 done
 kill -0 "$app_pid" 2>/dev/null || { cat "$work/app.log"; exit 1; }
-/usr/bin/python3 .github/scripts/linux-profile-e2e/drive.py test "$app_pid" "$work/files"
+/usr/bin/python3 .github/scripts/linux-profile-e2e/drive.py test "$app_pid" "$work/files" "$work/filechooser-dbus.log" || { cat "$work/app.log" "$work/openbox.log" "$work/filechooser-dbus.log"; exit 1; }
 echo 'Verified native settings export, import, invalid-file preservation, and dialog cancellation'
