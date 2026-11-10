@@ -16,8 +16,9 @@ const SHORTCUT: &str = "Control+Shift+F8";
 #[cfg(any(target_os = "linux", test))]
 fn is_wayland_session(session_type: Option<&str>, wayland_display: Option<&str>) -> bool {
     match session_type.filter(|s| !s.is_empty()) {
-        Some(value) => value.eq_ignore_ascii_case("wayland"),
-        None => wayland_display.is_some_and(|value| !value.is_empty()),
+        Some(value) if value.eq_ignore_ascii_case("wayland") => true,
+        Some(value) if value.eq_ignore_ascii_case("x11") => false,
+        _ => wayland_display.is_some_and(|value| !value.is_empty()),
     }
 }
 #[derive(Clone, Serialize)]
@@ -506,6 +507,9 @@ mod run_tests {
     fn wayland_session_is_not_mistaken_for_x11() {
         assert!(is_wayland_session(Some("wayland"), None));
         assert!(is_wayland_session(None, Some("wayland-0")));
+        assert!(is_wayland_session(Some("tty"), Some("wayland-0")));
+        assert!(is_wayland_session(Some("unspecified"), Some("wayland-0")));
+        assert!(!is_wayland_session(Some("tty"), None));
         assert!(!is_wayland_session(Some("x11"), Some("wayland-0")));
         assert!(!is_wayland_session(None, None));
     }

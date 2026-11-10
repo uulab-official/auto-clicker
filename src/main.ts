@@ -3,7 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import './style.css';
 import { translateDom, type Language } from './i18n';
 import { defaultClick, defaults, parseSettings, type Settings, type Click, type Step, type Position } from './settings';
-import { toggleDisabled, type Status } from './run-state';
+import { StatusSnapshotGate, toggleDisabled, type Status } from './run-state';
 
 const key = 'open-clicker-settings-v1';
 let settings = defaults();
@@ -148,4 +148,12 @@ render();
 void invoke<UpdateInfo | null>('check_update').then(info => {
   updateInfo = info; updateState = info ? 'available' : 'current'; render();
 }).catch(() => { updateState = 'idle'; render(); /* manual checks report the error */ });
-void listen<Status>('run-status', event => { status = event.payload; statusReady = true; render(); }).then(() => invoke<Status>('get_status')).then(value => { status = value; statusReady = true; render(); }).catch(error => { notice = `Desktop connection unavailable: ${String(error)}`; render(); });
+const statusSnapshotGate = new StatusSnapshotGate();
+void listen<Status>('run-status', event => {
+  statusSnapshotGate.eventReceived();
+  status = event.payload; statusReady = true; render();
+}).then(async () => {
+  const checkpoint = statusSnapshotGate.checkpoint();
+  const value = await invoke<Status>('get_status');
+  if (statusSnapshotGate.canApply(checkpoint)) { status = value; statusReady = true; render(); }
+}).catch(error => { notice = `Desktop connection unavailable: ${String(error)}`; render(); });
