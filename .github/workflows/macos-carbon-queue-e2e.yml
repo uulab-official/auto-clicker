@@ -14,6 +14,10 @@ jobs:
           node-version: 22
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
+      - name: Probe isolated virtual HID availability without sending input
+        run: |
+          clang -framework IOKit -framework CoreFoundation .github/scripts/macos-click-e2e/hid-availability.c -o "$RUNNER_TEMP/hid-probe"
+          "$RUNNER_TEMP/hid-probe"
       - run: npm ci
       - run: npm run tauri build -- --no-bundle
       - name: Verify the in-process Carbon callback on a disposable VM
