@@ -18,12 +18,15 @@ public static class TestInput {
 '@
 $tmp = Join-Path $env:RUNNER_TEMP 'public-auto-clicker-click-test'
 New-Item -ItemType Directory -Force $tmp | Out-Null
-$msi = Join-Path $tmp 'public.msi'
-Invoke-WebRequest 'https://github.com/uulab-official/auto-clicker/releases/download/v0.1.3/Auto.Clicker_0.1.3_x64_en-US.msi' -OutFile $msi
-$install = Start-Process msiexec.exe -ArgumentList '/i',"`"$msi`"",'/qn','/norestart' -Wait -PassThru
-if ($install.ExitCode -ne 0) { throw "Public MSI install failed: $($install.ExitCode)" }
-$exe = Join-Path $env:ProgramFiles 'Auto Clicker\auto-clicker.exe'
-if ((Get-Item $exe).VersionInfo.FileVersion -notmatch '^0\.1\.3(\.0)?$') { throw 'Installed application is not v0.1.3' }
+$exe = $env:AUTOCLICKER_TEST_EXE
+if (-not $exe) {
+  $msi = Join-Path $tmp 'public.msi'
+  Invoke-WebRequest 'https://github.com/uulab-official/auto-clicker/releases/download/v0.1.3/Auto.Clicker_0.1.3_x64_en-US.msi' -OutFile $msi
+  $install = Start-Process msiexec.exe -ArgumentList '/i',"`"$msi`"",'/qn','/norestart' -Wait -PassThru
+  if ($install.ExitCode -ne 0) { throw "Public MSI install failed: $($install.ExitCode)" }
+  $exe = Join-Path $env:ProgramFiles 'Auto Clicker\auto-clicker.exe'
+  if ((Get-Item $exe).VersionInfo.FileVersion -notmatch '^0\.1\.3(\.0)?$') { throw 'Installed application is not v0.1.3' }
+}
 $target = Join-Path $tmp 'target.ps1'
 $log = Join-Path $tmp 'clicks.txt'
 @'
@@ -123,7 +126,7 @@ try {
     Write-Host "Cursor after start=$($point.X),$($point.Y); window under pointer=$([TestInput]::WindowFromPoint($point))"
     throw "Expected at least two delivered clicks, received $count"
   }
-  Write-Host "Public v0.1.3 delivered $count simple clicks to a separate Windows application"
+  Write-Host "Tested application delivered $count simple clicks to a separate Windows application"
   # Ctrl+Shift+F8, using virtual events confined to the disposable runner.
   foreach ($key in @(0x11,0x10,0x77)) { [TestInput]::keybd_event($key,0,0,[UIntPtr]::Zero) }
   foreach ($key in @(0x77,0x10,0x11)) { [TestInput]::keybd_event($key,0,2,[UIntPtr]::Zero) }

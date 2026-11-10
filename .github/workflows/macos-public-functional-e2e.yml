@@ -1,0 +1,26 @@
+name: macOS public release functional verification
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  backup:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Exercise backup and restore on the published v0.1.4 app
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLIC_VERSION: '0.1.4'
+        run: bash .github/scripts/macos-profile-e2e/public.sh
+  clicks:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Exercise clicks and stop on the published v0.1.4 app
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLIC_VERSION: '0.1.4'
+        run: bash .github/scripts/macos-click-e2e/run.sh

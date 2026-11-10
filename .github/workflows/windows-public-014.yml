@@ -1,0 +1,28 @@
+name: Windows public v0.1.4 functionality
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  backup:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install the verified public v0.1.4 MSI
+        shell: pwsh
+        run: .github/scripts/windows-public-014/install.ps1
+      - name: Exercise actual backup and restore dialogs
+        shell: pwsh
+        run: .github/scripts/windows-profile-e2e/run.ps1
+  clicks:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install the verified public v0.1.4 MSI
+        shell: pwsh
+        run: .github/scripts/windows-public-014/install.ps1
+      - name: Exercise clicks and emergency stop
+        shell: pwsh
+        run: .github/scripts/windows-click-e2e/run.ps1

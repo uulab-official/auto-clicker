@@ -13,7 +13,7 @@ public static class ProfileDialogWindow {
 '@
 $work = Join-Path $env:RUNNER_TEMP 'auto-clicker-profile-e2e'
 New-Item -ItemType Directory -Force $work | Out-Null
-$exe = Join-Path $env:GITHUB_WORKSPACE 'src-tauri\target\release\auto-clicker.exe'
+$exe = if ($env:AUTOCLICKER_TEST_EXE) { $env:AUTOCLICKER_TEST_EXE } else { Join-Path $env:GITHUB_WORKSPACE 'src-tauri\target\release\auto-clicker.exe' }
 $invalid = Join-Path $work 'invalid.json'
 Set-Content -LiteralPath $invalid -Encoding UTF8 -Value '{"format":"auto-clicker-settings","version":99,"settings":{}}'
 $app = Start-Process $exe -PassThru

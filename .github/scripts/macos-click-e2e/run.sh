@@ -13,18 +13,20 @@ cleanup() {
 trap cleanup EXIT
 mkdir -p "$work/mount" "$work/install"
 case "$(uname -m)" in arm64) arch=aarch64 ;; x86_64) arch=x64 ;; *) exit 1 ;; esac
+version="${PUBLIC_VERSION:-0.1.3}"
+[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Invalid release version' >&2; exit 1; }
 # Authenticated metadata avoids shared-runner anonymous GitHub API limits.
-gh api repos/uulab-official/auto-clicker/releases/tags/v0.1.3 > "$work/release.json"
-python3 - "$work/release.json" "$arch" "$work/digest" <<'PY'
+gh api "repos/uulab-official/auto-clicker/releases/tags/v$version" > "$work/release.json"
+python3 - "$work/release.json" "$arch" "$work/digest" "$version" <<'PY'
 import importlib.util, json, pathlib, sys
 spec = importlib.util.spec_from_file_location('release_info', '.github/scripts/public-update-e2e/release_info.py')
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 release = json.loads(pathlib.Path(sys.argv[1]).read_text())
-_, digest = module.select_baseline_asset(release, '0.1.3', f'_{sys.argv[2]}.dmg')
+_, digest = module.select_baseline_asset(release, sys.argv[4], f'_{sys.argv[2]}.dmg')
 pathlib.Path(sys.argv[3]).write_text(digest)
 PY
-gh release download v0.1.3 --repo uulab-official/auto-clicker --pattern "*_${arch}.dmg" --output "$work/public.dmg"
+gh release download "v$version" --repo uulab-official/auto-clicker --pattern "*_${arch}.dmg" --output "$work/public.dmg"
 [[ "$(shasum -a 256 "$work/public.dmg" | awk '{print $1}')" == "$(cat "$work/digest")" ]] || { echo 'Public installer SHA-256 mismatch' >&2; exit 1; }
 codesign --verify --strict "$work/public.dmg"
 xcrun stapler validate "$work/public.dmg"
@@ -81,7 +83,7 @@ if [[ "$stopped" != "$after" ]]; then
   echo 'UI Stop clicking halted the actual click run'
 fi
 kill -0 "$app_pid" || { cat "$work/app.log"; exit 1; }
-[[ "$emergency_failed" != 0 ]] || echo "Public 0.1.3 produced $count actual target clicks and stopped after Ctrl+Shift+F8"
+[[ "$emergency_failed" != 0 ]] || echo "Public $version produced $count actual target clicks and stopped after Ctrl+Shift+F8"
 
 # Configure two positions through the real UI, then check the target's recorded
 # input order for two complete cycles. Position capture uses the actual cursor.
@@ -111,5 +113,5 @@ stopped=$(grep -c '^click ' "$work/events" || true)
 sleep 3
 after=$(grep -c '^click ' "$work/events" || true)
 [[ "$stopped" == "$after" ]] || { echo "Sequence continued after stop: $stopped -> $after" >&2; exit 1; }
-echo 'Public 0.1.3 delivered two repetitions of the two-position sequence in order and stopped'
+echo "Public $version delivered two repetitions of the two-position sequence in order and stopped"
 [[ "$emergency_failed" == 0 ]] || { echo 'Emergency shortcut did not stop the clicker in this runner' >&2; exit 1; }

@@ -20,7 +20,7 @@ profile = {'format':'auto-clicker-settings','version':1,'settings':settings}
 (work/'invalid.json').write_text('{"format":"auto-clicker-settings","version":1,"settings":{"steps":null}}')
 PY
 swiftc .github/scripts/macos-profile-e2e/control.swift -o "$work/control"
-src-tauri/target/release/auto-clicker >"$work/app.log" 2>&1 & app_pid=$!
+"${APP_BINARY:-src-tauri/target/release/auto-clicker}" >"$work/app.log" 2>&1 & app_pid=$!
 control() { "$work/control" "$1" "$app_pid" "${@:2}"; }
 fail() { control dump || true; cat "$work/app.log" >&2; echo "$*" >&2; exit 1; }
 wait_notice() {
