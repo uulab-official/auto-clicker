@@ -66,6 +66,7 @@ struct Status {
     shortcut_error: Option<String>,
     shortcut_warning: Option<String>,
     available_shortcuts: Vec<String>,
+    paused_over_app: bool,
 }
 struct Inner {
     status: Status,
@@ -203,6 +204,38 @@ fn sleep_interruptibly(cancel: &AtomicBool, ms: u64) -> bool {
         std::thread::sleep(remaining.min(Duration::from_millis(10)));
     }
 }
+fn point_in_rect(x: f64, y: f64, left: i32, top: i32, width: u32, height: u32) -> bool {
+    let (left, top) = (f64::from(left), f64::from(top));
+    x >= left && y >= top && x < left + f64::from(width) && y < top + f64::from(height)
+}
+// A click landing on this app would press its own controls (for example the
+// Stop button that replaced Start under the pointer), ending the run at once.
+fn pointer_over_app(app: &tauri::AppHandle) -> bool {
+    let Some(window) = app.get_webview_window("main") else {
+        return false;
+    };
+    if !window.is_visible().unwrap_or(false)
+        || window.is_minimized().unwrap_or(false)
+        || !window.is_focused().unwrap_or(false)
+    {
+        return false;
+    }
+    match (window.cursor_position(), window.outer_position(), window.outer_size()) {
+        (Ok(cursor), Ok(pos), Ok(size)) => {
+            point_in_rect(cursor.x, cursor.y, pos.x, pos.y, size.width, size.height)
+        }
+        _ => false,
+    }
+}
+fn set_paused_over_app(app: &tauri::AppHandle, paused: bool) {
+    let state = app.state::<AppState>();
+    if let Ok(mut inner) = state.0.lock() {
+        if inner.status.paused_over_app != paused {
+            inner.status.paused_over_app = paused;
+            emit_status(app, inner.status.clone());
+        }
+    };
+}
 fn position_matches(target: Position, actual: (i32, i32)) -> bool {
     (i64::from(target.x) - i64::from(actual.0)).abs() <= 2
         && (i64::from(target.y) - i64::from(actual.1)).abs() <= 2
@@ -263,6 +296,7 @@ fn start(app: &tauri::AppHandle, config: Config) -> Result<(), String> {
     inner.status.running = true;
     inner.status.completed_cycles = 0;
     inner.status.error = None;
+    inner.status.paused_over_app = false;
     let status = inner.status.clone();
     drop(inner);
     emit_status(app, status);
@@ -316,6 +350,11 @@ fn start(app: &tauri::AppHandle, config: Config) -> Result<(), String> {
                                 return Err(format!("Could not move to ({}, {}). Check the display layout or permissions; this step was not clicked.", pos.x, pos.y));
                             }
                         }
+                        let over_app = pointer_over_app(&app);
+                        set_paused_over_app(&app, over_app);
+                        if over_app {
+                            return Ok(());
+                        }
                         let button = match button {
                             MouseButton::Left => Button::Left,
                             MouseButton::Right => Button::Right,
@@ -340,6 +379,7 @@ fn start(app: &tauri::AppHandle, config: Config) -> Result<(), String> {
         let state = app.state::<AppState>();
         if let Ok(mut inner) = state.0.lock() {
             inner.status.running = false;
+            inner.status.paused_over_app = false;
             inner.status.error = result.err();
             inner.cancel = None;
             emit_status(&app, inner.status.clone());
@@ -389,6 +429,7 @@ pub fn run() {
                 shortcut_error: None,
                 shortcut_warning: None,
                 available_shortcuts: Vec::new(),
+                paused_over_app: false,
             },
             cancel: None,
             installing: false,
@@ -456,6 +497,14 @@ pub fn run() {
 #[cfg(test)]
 mod run_tests {
     use super::*;
+    #[test]
+    fn point_in_rect_covers_window_bounds_only() {
+        assert!(point_in_rect(100.0, 200.0, 100, 200, 50, 40));
+        assert!(point_in_rect(149.5, 239.5, 100, 200, 50, 40));
+        assert!(!point_in_rect(150.0, 220.0, 100, 200, 50, 40));
+        assert!(!point_in_rect(120.0, 199.9, 100, 200, 50, 40));
+        assert!(point_in_rect(-1500.0, 10.0, -1920, 0, 1920, 1080));
+    }
     #[test]
     fn shortcut_registration_requires_one_available_and_reports_partial_failure() {
         let all = summarize_shortcut_results(vec![

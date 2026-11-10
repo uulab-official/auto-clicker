@@ -12,7 +12,7 @@ let settings = defaults();
 let language: Language = navigator.language.toLowerCase().startsWith('ko') ? 'ko' : navigator.language.toLowerCase().startsWith('ja') ? 'ja' : 'en';
 try { const saved = localStorage.getItem('open-clicker-language'); if (saved === 'en' || saved === 'ko' || saved === 'ja') language = saved; } catch { /* use system language */ }
 try { settings = parseSettings(localStorage.getItem(key)); } catch { /* start with defaults if storage is unavailable */ }
-let status: Status = { running: false, completed_cycles: 0, error: null, shortcut_error: null, shortcut_warning: null, available_shortcuts: [] };
+let status: Status = { running: false, completed_cycles: 0, error: null, shortcut_error: null, shortcut_warning: null, available_shortcuts: [], paused_over_app: false };
 let statusReady = false;
 let notice = '';
 let capturing = false;
@@ -67,7 +67,7 @@ function render() {
       <div class="start-delay"><label for="start-delay">Start delay <span class="unit">seconds</span></label><input id="start-delay" type="number" min="0" max="60" step="1" required value="${escape(settings.startDelayMs / 1000)}"><p class="hint">Wait before the first click so you can switch windows. You can stop during the wait.</p></div>
       <div class="backup-section"><span class="label">Settings backup</span><p class="hint">Export your settings or replace them with a saved backup.</p><div class="add-actions"><button type="button" class="button secondary" data-action="export-settings">Export settings</button><button type="button" class="button secondary" data-action="import-settings">Import settings</button></div></div>
       </fieldset></form></section>
-      <aside class="control-panel"><div><p class="eyebrow">RUN CONTROL</p><h2>${status.running ? 'In progress' : 'Ready when you are'}</h2><p>${status.running ? `Completed cycles: ${status.completed_cycles}` : 'Review your settings, then start clicking.'}</p></div>
+      <aside class="control-panel"><div><p class="eyebrow">RUN CONTROL</p><h2>${status.running ? 'In progress' : 'Ready when you are'}</h2><p>${status.running ? `Completed cycles: ${status.completed_cycles}` : 'Review your settings, then start clicking.'}</p>${status.running && status.paused_over_app ? '<p class="hint" role="status">Clicking is paused while the pointer is over this window. Move it to where you want to click.</p>' : ''}</div>
       <button type="button" class="button primary ${status.running ? 'stop' : ''}" data-action="toggle"${disabled(toggleDisabled(status, statusReady, capturing || fileBusy, updateState === 'installing'))}>${status.running ? '<span aria-hidden="true">■</span> Stop clicking' : '<span aria-hidden="true">▶</span> Start clicking'}</button>
       <div class="shortcut"><span>Global emergency stop</span>${shortcuts.length ? shortcuts.map(shortcut => `<kbd>${escape(shortcut)}</kbd>`).join('<span>or</span>') : `<span>${statusReady ? 'No shortcut available' : 'Checking shortcuts…'}</span>`}</div>${isMac && shortcuts.includes('Ctrl+Shift+F8') ? '<p class="hint">On some Mac keyboards, hold Fn or Globe with F8 to use it as a function key.</p>' : ''}${shortcuts.length ? '<p class="safety">You can stop a run at any time with the shortcut. Check system permissions if clicking is unavailable.</p>' : ''}
       <div class="updates"><span class="label">App updates</span>

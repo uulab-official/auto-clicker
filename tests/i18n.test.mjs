@@ -12,5 +12,6 @@ test('language fallback and dynamic user-visible text', () => {
   assert.match(translate('On some Mac keyboards, hold Fn or Globe with F8 to use it as a function key.', 'ko'), /Fn/);
   assert.match(translate('On some Mac keyboards, hold Fn or Globe with F8 to use it as a function key.', 'ja'), /Fn/);
   assert.notEqual(translate('Some emergency shortcuts are unavailable. Use an available shortcut shown below.', 'ko'), 'Some emergency shortcuts are unavailable. Use an available shortcut shown below.');
+  assert.notEqual(translate('Clicking is paused while the pointer is over this window. Move it to where you want to click.', 'ko'), 'Clicking is paused while the pointer is over this window. Move it to where you want to click.');
   assert.match(translate('Could not capture the pointer position: denied', 'ja'), /denied/);
 });

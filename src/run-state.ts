@@ -1,4 +1,4 @@
-export type Status = { running: boolean; completed_cycles: number; error: string | null; shortcut_error: string | null; shortcut_warning?: string | null; available_shortcuts?: string[] };
+export type Status = { running: boolean; completed_cycles: number; error: string | null; shortcut_error: string | null; shortcut_warning?: string | null; available_shortcuts?: string[]; paused_over_app?: boolean };
 
 // A working emergency stop must be confirmed before a run starts. Once a run
 // exists, its stop control remains available regardless of other UI activity.
