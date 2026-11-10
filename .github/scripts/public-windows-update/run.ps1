@@ -12,13 +12,14 @@ if (-not $probe) {
   if ($manifest.version -ne $target) { throw "Public latest is $($manifest.version), expected $target" }
 }
 $oldMsi = Join-Path $tmp 'old.msi'
-Invoke-WebRequest 'https://github.com/uulab-official/auto-clicker/releases/download/v0.1.0/Auto-Clicker_0.1.0_x64.msi' -OutFile $oldMsi
+Invoke-WebRequest 'https://github.com/uulab-official/auto-clicker/releases/download/v0.1.1/Auto.Clicker_0.1.1_x64_en-US.msi' -OutFile $oldMsi
+if ((Get-FileHash $oldMsi -Algorithm SHA256).Hash -ne '12741B32513AF6649F3A25F14A79010DDC172E91FFDC1A8426268143A8550EF5') { throw 'Baseline MSI does not match the v0.1.1 release asset digest' }
 $p = Start-Process msiexec.exe -ArgumentList '/i',"`"$oldMsi`"",'/qn','/norestart' -Wait -PassThru
-if ($p.ExitCode -ne 0) { throw "v0.1.0 installation failed: $($p.ExitCode)" }
+if ($p.ExitCode -ne 0) { throw "v0.1.1 installation failed: $($p.ExitCode)" }
 $exe = Join-Path $env:ProgramFiles 'Auto Clicker\auto-clicker.exe'
 if (-not (Test-Path $exe)) { throw 'Installed application not found' }
 $oldVersion = (Get-Item $exe).VersionInfo.FileVersion
-if ($oldVersion -notmatch '^0\.1\.0(\.0)?$') { throw "Unexpected baseline file version: $oldVersion" }
+if ($oldVersion -notmatch '^0\.1\.1(\.0)?$') { throw "Unexpected baseline file version: $oldVersion" }
 Write-Host "Installed unmodified public application: $oldVersion"
 # Independently obtain the publicly advertised MSI to compare the installed
 # executable with its exact embedded payload after the app has updated itself.
@@ -61,7 +62,7 @@ do {
 } while (-not $button -and (Get-Date) -lt $deadline)
 if (-not $button) { Write-Host "Visible accessibility names: $($seen -join ' | ')"; throw "Public app did not present the expected update button (probe=$probe)" }
 if ($probe) {
-  Write-Host 'Public v0.1.0 update-check button is accessible via UI Automation; no update was started.'
+  Write-Host 'Public v0.1.1 update-check button is accessible via UI Automation; no update was started.'
   Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
   exit 0
 }

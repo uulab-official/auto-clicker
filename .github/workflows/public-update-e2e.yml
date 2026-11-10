@@ -2,6 +2,10 @@ name: Public release update verification
 on:
   workflow_dispatch:
     inputs:
+      baseline_version:
+        description: Published baseline release version (MAJOR.MINOR.PATCH)
+        required: true
+        default: '0.1.0'
       target_version:
         description: Expected latest public release version (MAJOR.MINOR.PATCH)
         required: true
@@ -13,6 +17,7 @@ on:
 permissions:
   contents: read
 env:
+  EXPECTED_BASELINE_VERSION: ${{ inputs.baseline_version }}
   EXPECTED_UPDATE_VERSION: ${{ inputs.target_version }}
   PUBLIC_UPDATE_PROBE_ONLY: ${{ inputs.probe_only && '1' || '0' }}
 jobs:
@@ -21,6 +26,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+      - name: Check baseline version and asset resolution
+        run: python3 .github/scripts/public-update-e2e/test_release_info.py
       - name: Install isolated desktop dependencies
         run: |
           sudo apt-get update
@@ -32,5 +39,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+      - name: Check baseline version and asset resolution
+        run: python3 .github/scripts/public-update-e2e/test_release_info.py
       - name: Update actual published macOS app
         run: bash .github/scripts/public-update-e2e/macos.sh

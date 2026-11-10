@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
 # Runs exclusively on a disposable GitHub Actions VM with its own Xvfb display.
 set -euo pipefail
+baseline_version="${EXPECTED_BASELINE_VERSION:-0.1.0}"
 expected_version="${EXPECTED_UPDATE_VERSION:-0.1.1}"
-if [[ ! "$expected_version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ || "$expected_version" == 0.0.* || "$expected_version" == 0.1.0 ]]; then
-  echo 'Expected target must be a stable version newer than 0.1.0.' >&2
-  exit 1
-fi
 work="$(mktemp -d)"
 app_pid=''
 cleanup() {
@@ -26,7 +23,7 @@ pathlib.Path(sys.argv[2]).write_text(m['platforms']['linux-x86_64']['url'])
 PY
 curl --fail --location --silent --show-error -H 'Accept: application/octet-stream' -H 'User-Agent: auto-clicker-release-verification' -o "$work/expected.AppImage" "$(cat "$work/target.url")"
 fi
-curl --fail --location --silent --show-error -o "$work/install/Auto Clicker.AppImage" 'https://github.com/uulab-official/auto-clicker/releases/download/v0.1.0/Auto-Clicker_0.1.0_amd64.AppImage'
+python3 .github/scripts/public-update-e2e/release_info.py "$baseline_version" "$expected_version" _amd64.AppImage "$work/install/Auto Clicker.AppImage"
 chmod +x "$work/install/Auto Clicker.AppImage"
 if [[ "${PUBLIC_UPDATE_PROBE_ONLY:-0}" != 1 ]]; then
 base_hash=$(sha256sum "$work/install/Auto Clicker.AppImage" | awk '{print $1}')
@@ -44,7 +41,7 @@ for _ in $(seq 1 90); do
 done
 [[ -n "$window" ]] || { cat "$work/app.log"; echo 'Published application did not open' >&2; exit 1; }
 app_window_pid=$(xdotool getwindowpid "$window")
-echo "Published 0.1.0 started, target PID: $app_window_pid"
+echo "Published $baseline_version started, target PID: $app_window_pid"
 if [[ "${PUBLIC_UPDATE_PROBE_ONLY:-0}" == 1 ]]; then
   /usr/bin/python3 .github/scripts/public-update-e2e/linux-press.py "$app_window_pid" probe
   echo 'Accessibility probe passed; no application action was invoked'
@@ -58,7 +55,7 @@ for _ in $(seq 1 180); do
   sleep 1
 done
 [[ "$updated" == 1 ]] || { cat "$work/app.log"; echo 'Public update was not installed' >&2; exit 1; }
-echo "Actual published 0.1.0 AppImage updated to public $expected_version; payload SHA256 matched"
+echo "Actual published $baseline_version AppImage updated to public $expected_version; payload SHA256 matched"
 kill -- "-$app_pid" 2>/dev/null || true; wait "$app_pid" 2>/dev/null || true; app_pid=''
 setsid "$work/install/Auto Clicker.AppImage" >"$work/relaunch.log" 2>&1 &
 app_pid=$!

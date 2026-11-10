@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
 # Runs only on a disposable GitHub macOS VM. Uses targeted AX, not host input.
 set -euo pipefail
+baseline_version="${EXPECTED_BASELINE_VERSION:-0.1.0}"
 expected_version="${EXPECTED_UPDATE_VERSION:-0.1.1}"
-if [[ ! "$expected_version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ || "$expected_version" == 0.0.* || "$expected_version" == 0.1.0 ]]; then
-  echo 'Expected target must be a stable version newer than 0.1.0.' >&2
-  exit 1
-fi
 work="$(cd "$(mktemp -d)" && pwd -P)"
 app_pid=''
 cleanup() {
@@ -35,7 +32,7 @@ expected_app="$(find "$work/expected" -maxdepth 1 -type d -name '*.app' -print -
 [[ -n "$expected_app" ]] || { echo 'Published update app missing from archive' >&2; exit 1; }
 expected_hash=$(shasum -a 256 "$expected_app/Contents/MacOS/auto-clicker" | awk '{print $1}')
 fi
-curl --fail --location --silent --show-error -o "$work/public.dmg" "https://github.com/uulab-official/auto-clicker/releases/download/v0.1.0/Auto-Clicker_0.1.0_${download_arch}.dmg"
+python3 .github/scripts/public-update-e2e/release_info.py "$baseline_version" "$expected_version" "_${download_arch}.dmg" "$work/public.dmg"
 codesign --verify --strict "$work/public.dmg"
 xcrun stapler validate "$work/public.dmg"
 spctl --assess --type open --context context:primary-signature --verbose=2 "$work/public.dmg"
@@ -43,7 +40,7 @@ hdiutil attach "$work/public.dmg" -nobrowse -readonly -mountpoint "$work/mount" 
 ditto "$work/mount/Auto Clicker.app" "$work/install/Auto Clicker.app"
 hdiutil detach "$work/mount" -quiet
 app="$work/install/Auto Clicker.app"
-[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" == '0.1.0' ]] || { echo 'Expected original release version 0.1.0' >&2; exit 1; }
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" == "$baseline_version" ]] || { echo "Expected original release version $baseline_version" >&2; exit 1; }
 "$app/Contents/MacOS/auto-clicker" >"$work/app.log" 2>&1 & app_pid=$!
 sleep 8
 kill -0 "$app_pid" 2>/dev/null || { cat "$work/app.log"; echo 'Original application did not start' >&2; exit 1; }
@@ -67,7 +64,7 @@ done
 codesign --verify --deep --strict "$app"
 xcrun stapler validate "$app"
 spctl --assess --type execute --verbose=2 "$app"
-echo "Original published 0.1.0 updated to public notarized $expected_version and executable SHA256 matched"
+echo "Original published $baseline_version updated to public notarized $expected_version and executable SHA256 matched"
 kill "$app_pid" 2>/dev/null || true; wait "$app_pid" 2>/dev/null || true; app_pid=''
 "$app/Contents/MacOS/auto-clicker" >"$work/relaunch.log" 2>&1 & app_pid=$!
 sleep 8
