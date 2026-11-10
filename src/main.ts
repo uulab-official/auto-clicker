@@ -12,7 +12,7 @@ let settings = defaults();
 let language: Language = navigator.language.toLowerCase().startsWith('ko') ? 'ko' : navigator.language.toLowerCase().startsWith('ja') ? 'ja' : 'en';
 try { const saved = localStorage.getItem('open-clicker-language'); if (saved === 'en' || saved === 'ko' || saved === 'ja') language = saved; } catch { /* use system language */ }
 try { settings = parseSettings(localStorage.getItem(key)); } catch { /* start with defaults if storage is unavailable */ }
-let status: Status = { running: false, completed_cycles: 0, error: null, shortcut_error: null };
+let status: Status = { running: false, completed_cycles: 0, error: null, shortcut_error: null, shortcut_warning: null, available_shortcuts: [] };
 let statusReady = false;
 let notice = '';
 let capturing = false;
@@ -25,6 +25,7 @@ const app = document.querySelector<HTMLDivElement>('#app')!;
 const escape = (s: unknown) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const checked = (v: boolean) => v ? ' checked' : '';
 const disabled = (v: boolean) => v ? ' disabled' : '';
+const isMac = /Mac/i.test(navigator.platform) || /Macintosh/i.test(navigator.userAgent);
 function save() { try { localStorage.setItem(key, JSON.stringify(settings)); } catch { notice = 'Settings could not be saved on this device.'; } }
 function options(selected: string, values: [string, string][]) { return values.map(([v, label]) => `<option value="${v}"${v === selected ? ' selected' : ''}>${label}</option>`).join(''); }
 function clickFields(step: Click, index: string) {
@@ -49,10 +50,12 @@ function render() {
   else if (active instanceof HTMLInputElement && active.name) selector = `input[name="${CSS.escape(active.name)}"][value="${CSS.escape(active.value)}"]`;
   const editingValue = active instanceof HTMLInputElement && active.type === 'number' ? active.value : null;
   const sequence = settings.mode === 'sequence';
+  const shortcuts = Array.isArray(status.available_shortcuts) ? status.available_shortcuts.filter((value): value is string => typeof value === 'string' && value.length > 0) : [];
   app.innerHTML = `<main class="shell">
     <header class="topbar"><div class="brand"><span class="brand-icon" aria-hidden="true">✳</span><div><strong>Auto Clicker</strong><span class="brand-sub">A little automation, in your control.</span></div></div><div class="top-actions"><label class="language-label"><span class="sr-only">Language</span><select id="language" aria-label="Language"><option value="en"${language === 'en' ? ' selected' : ''}>English</option><option value="ko"${language === 'ko' ? ' selected' : ''}>한국어</option><option value="ja"${language === 'ja' ? ' selected' : ''}>日本語</option></select></label><span class="open-source">OPEN SOURCE</span></div></header>
     <section class="intro"><div><p class="eyebrow">DESKTOP AUTOMATION</p><h1>Make every click count.</h1><p>Set up a click or build a sequence. Start when you're ready.</p></div><div class="status ${status.running ? 'active' : ''}" role="status"><span class="status-dot"></span>${status.running ? 'Running' : 'Ready'}</div></section>
     ${status.shortcut_error ? `<div class="alert" role="alert"><strong>Emergency stop shortcut unavailable. Starting is disabled.</strong><p class="hint">${escape(status.shortcut_error)}</p></div>` : ''}
+    ${status.shortcut_warning ? `<div class="alert" role="alert"><strong>Some emergency shortcuts are unavailable. Use an available shortcut shown below.</strong><p class="hint">${escape(status.shortcut_warning)}</p></div>` : ''}
     ${notice || status.error ? `<div class="alert" role="alert">${escape(notice || status.error)}</div>` : ''}
     <div class="layout"><section class="workspace" aria-label="Click configuration">
       <div class="tabs" role="group" aria-label="Click mode"><button type="button" aria-pressed="${!sequence}" data-action="mode" data-mode="simple"${disabled(status.running || capturing || fileBusy)}>Simple click</button><button type="button" aria-pressed="${sequence}" data-action="mode" data-mode="sequence"${disabled(status.running || capturing || fileBusy)}>Sequence</button></div>
@@ -66,7 +69,7 @@ function render() {
       </fieldset></form></section>
       <aside class="control-panel"><div><p class="eyebrow">RUN CONTROL</p><h2>${status.running ? 'In progress' : 'Ready when you are'}</h2><p>${status.running ? `Completed cycles: ${status.completed_cycles}` : 'Review your settings, then start clicking.'}</p></div>
       <button type="button" class="button primary ${status.running ? 'stop' : ''}" data-action="toggle"${disabled(toggleDisabled(status, statusReady, capturing || fileBusy, updateState === 'installing'))}>${status.running ? '<span aria-hidden="true">■</span> Stop clicking' : '<span aria-hidden="true">▶</span> Start clicking'}</button>
-      <div class="shortcut"><span>Global emergency stop</span><kbd>Ctrl</kbd><span>+</span><kbd>Shift</kbd><span>+</span><kbd>F8</kbd></div><p class="safety">You can stop a run at any time with the shortcut. Check system permissions if clicking is unavailable.</p>
+      <div class="shortcut"><span>Global emergency stop</span>${shortcuts.length ? shortcuts.map(shortcut => `<kbd>${escape(shortcut)}</kbd>`).join('<span>or</span>') : `<span>${statusReady ? 'No shortcut available' : 'Checking shortcuts…'}</span>`}</div>${isMac && shortcuts.includes('Ctrl+Shift+F8') ? '<p class="hint">On some Mac keyboards, hold Fn or Globe with F8 to use it as a function key.</p>' : ''}${shortcuts.length ? '<p class="safety">You can stop a run at any time with the shortcut. Check system permissions if clicking is unavailable.</p>' : ''}
       <div class="updates"><span class="label">App updates</span>
       <p class="hint">${updateState === 'checking' ? 'Checking for updates…' : updateState === 'installing' ? 'Installing update…' : updateState === 'current' ? 'You have the latest version.' : updateState === 'installed' ? 'Update installed. Restart the app to use it.' : updateState === 'available' && updateInfo ? `Version ${escape(updateInfo.version)} is available.` : updateState === 'error' ? escape(updateError) : 'Updates are checked on startup. Installation requires your choice.'}</p>
       ${updateState === 'available' && updateInfo?.notes ? `<p class="update-notes">${escape(updateInfo.notes)}</p>` : ''}

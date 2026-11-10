@@ -9,5 +9,8 @@ test('language fallback and dynamic user-visible text', () => {
   assert.equal(translate('Duplicate step 3', 'en'), 'Duplicate step 3');
   assert.equal(translate('Duplicate step 3', 'ko'), '3단계 복제');
   assert.equal(translate('Duplicate step 3', 'ja'), 'ステップ3を複製');
+  assert.match(translate('On some Mac keyboards, hold Fn or Globe with F8 to use it as a function key.', 'ko'), /Fn/);
+  assert.match(translate('On some Mac keyboards, hold Fn or Globe with F8 to use it as a function key.', 'ja'), /Fn/);
+  assert.notEqual(translate('Some emergency shortcuts are unavailable. Use an available shortcut shown below.', 'ko'), 'Some emergency shortcuts are unavailable. Use an available shortcut shown below.');
   assert.match(translate('Could not capture the pointer position: denied', 'ja'), /denied/);
 });

@@ -7,6 +7,10 @@ jobs:
   verify:
     runs-on: macos-latest
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shortcut: ['Control+Shift+F8', 'Control+Shift+Escape']
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -21,4 +25,6 @@ jobs:
       - run: npm ci
       - run: npm run tauri build -- --no-bundle
       - name: Verify the in-process Carbon callback on a disposable VM
+        env:
+          AUTOCLICKER_TEST_SHORTCUT: ${{ matrix.shortcut }}
         run: bash .github/scripts/macos-click-e2e/queue-test.sh

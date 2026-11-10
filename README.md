@@ -9,7 +9,9 @@ use GitHub Releases.
 
 Auto Clicker는 Rust와 Tauri로 만든 오픈소스 데스크톱 자동 클릭 도구입니다.
 단순 반복 클릭과 여러 위치를 순서대로 클릭하는 매크로를 지원합니다. 실행은 앱에서
-시작하며 `Ctrl+Shift+F8`은 실행을 정지합니다. macOS에서는 손쉬운 사용 권한이
+시작하며 `Ctrl+Shift+F8`은 실행을 정지합니다. macOS에서는 `Ctrl+Shift+Escape`도
+사용할 수 있으며, 키보드 설정에 따라 F8에는 Fn 또는 지구본 키를 함께 눌러야 합니다.
+실제 사용할 수 있도록 등록된 단축키는 앱에 표시됩니다. macOS에서는 손쉬운 사용 권한이
 필요합니다. Linux에서는 전역 긴급 정지를 보장할 수 없는 Wayland 세션의
 클릭 실행을 차단하므로 X11 세션을 사용하세요.
 시작 전 0~60초 대기와 단계 복제로 작업을 더 편하게 준비할 수 있습니다.
@@ -20,7 +22,9 @@ Auto Clicker는 Rust와 Tauri로 만든 오픈소스 데스크톱 자동 클릭 
 
 Auto Clicker は Rust と Tauri で作られたオープンソースのデスクトップ用自動
 クリックツールです。単純な繰り返しクリックと、複数の位置を順番にクリックする
-マクロに対応します。アプリから開始し、`Ctrl+Shift+F8` で停止できます。
+マクロに対応します。アプリから開始し、`Ctrl+Shift+F8` で停止できます。macOS では
+`Ctrl+Shift+Escape` も使えます。キーボード設定によっては F8 に Fn または地球儀キーを
+併用します。登録できたショートカットはアプリに表示されます。
 開始前の待機時間（0〜60秒）とステップの複製にも対応します。
 設定を JSON ファイルとして書き出し、読み込めます。読み込みは現在の設定を置き換えます。
 macOS ではアクセシビリティの許可が必要です。Linux の Wayland セッションでは
@@ -36,7 +40,10 @@ macOS ではアクセシビリティの許可が必要です。Linux の Wayland
 - Export settings to a JSON backup or import a backup to replace the current
   settings. Cancelled or invalid imports leave current settings unchanged.
 - Start and stop using the application. The global shortcut **Ctrl+Shift+F8**
-  stops a running sequence; it does not start one.
+  stops a running sequence; it does not start one. On macOS,
+  **Ctrl+Shift+Escape** is also available when successfully registered.
+  The app displays the shortcuts that registered successfully. Some Mac
+  keyboards require holding Fn or Globe to use F8 as a function key.
 
 Keyboard recording and replay are not currently implemented. Operating-system
 input permissions and display-server restrictions apply; see below.

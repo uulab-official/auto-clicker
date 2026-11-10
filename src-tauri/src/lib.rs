@@ -13,6 +13,43 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use tauri_plugin_updater::{Update, UpdaterExt};
 
 const SHORTCUT: &str = "Control+Shift+F8";
+#[cfg(target_os = "macos")]
+const ALTERNATE_SHORTCUT: &str = "Control+Shift+Escape";
+
+struct ShortcutRegistration {
+    available: Vec<String>,
+    error: Option<String>,
+    warning: Option<String>,
+}
+
+fn summarize_shortcut_results(results: Vec<(&str, Result<(), String>)>) -> ShortcutRegistration {
+    let mut available = Vec::new();
+    let mut failures = Vec::new();
+    for (label, result) in results {
+        match result {
+            Ok(()) => available.push(label.to_owned()),
+            Err(error) => failures.push(format!("{label}: {error}")),
+        }
+    }
+    let details = failures.join("; ");
+    if available.is_empty() {
+        ShortcutRegistration {
+            available,
+            error: Some(if details.is_empty() {
+                "No emergency shortcut is available.".into()
+            } else {
+                details
+            }),
+            warning: None,
+        }
+    } else {
+        ShortcutRegistration {
+            available,
+            error: None,
+            warning: (!details.is_empty()).then_some(details),
+        }
+    }
+}
 #[cfg(any(target_os = "linux", test))]
 fn is_wayland_session(session_type: Option<&str>, wayland_display: Option<&str>) -> bool {
     match session_type.filter(|s| !s.is_empty()) {
@@ -27,6 +64,8 @@ struct Status {
     completed_cycles: u64,
     error: Option<String>,
     shortcut_error: Option<String>,
+    shortcut_warning: Option<String>,
+    available_shortcuts: Vec<String>,
 }
 struct Inner {
     status: Status,
@@ -348,6 +387,8 @@ pub fn run() {
                 completed_cycles: 0,
                 error: None,
                 shortcut_error: None,
+                shortcut_warning: None,
+                available_shortcuts: Vec::new(),
             },
             cancel: None,
             installing: false,
@@ -365,26 +406,38 @@ pub fn run() {
             #[cfg(not(target_os = "linux"))]
             let unsafe_session = false;
 
-            let shortcut_result = if unsafe_session {
-                Err("Wayland global emergency shortcuts are not supported. Sign in to an X11 session to run the clicker.".to_string())
+            let registration = if unsafe_session {
+                ShortcutRegistration {
+                    available: Vec::new(),
+                    error: Some("Wayland global emergency shortcuts are not supported. Sign in to an X11 session to run the clicker.".to_string()),
+                    warning: None,
+                }
             } else {
-                app.handle().plugin(
+                let plugin_result = app.handle().plugin(
                     tauri_plugin_global_shortcut::Builder::new()
                         .with_handler(|app, _, event| {
                             if event.state == ShortcutState::Pressed { stop(app); }
                         })
                         .build(),
-                ).map_err(|e| e.to_string()).and_then(|()| {
-                    app.global_shortcut().register(SHORTCUT).map_err(|e| e.to_string())
-                })
+                );
+                match plugin_result {
+                    Ok(()) => {
+                        let first = ("Ctrl+Shift+F8", app.global_shortcut().register(SHORTCUT).map_err(|e| e.to_string()));
+                        #[cfg(target_os = "macos")]
+                        let results = vec![first, ("Ctrl+Shift+Escape", app.global_shortcut().register(ALTERNATE_SHORTCUT).map_err(|e| e.to_string()))];
+                        #[cfg(not(target_os = "macos"))]
+                        let results = vec![first];
+                        summarize_shortcut_results(results)
+                    }
+                    Err(error) => ShortcutRegistration { available: Vec::new(), error: Some(error.to_string()), warning: None },
+                }
             };
-            if let Err(e) = shortcut_result {
-                app.state::<AppState>()
-                    .0
-                    .lock()
-                    .unwrap()
-                    .status
-                    .shortcut_error = Some(e);
+            {
+                let state = app.state::<AppState>();
+                let mut inner = state.0.lock().unwrap();
+                inner.status.shortcut_error = registration.error;
+                inner.status.shortcut_warning = registration.warning;
+                inner.status.available_shortcuts = registration.available;
             }
             Ok(())
         })
@@ -403,6 +456,43 @@ pub fn run() {
 #[cfg(test)]
 mod run_tests {
     use super::*;
+    #[test]
+    fn shortcut_registration_requires_one_available_and_reports_partial_failure() {
+        let all = summarize_shortcut_results(vec![
+            ("Ctrl+Shift+F8", Ok(())),
+            ("Ctrl+Shift+Escape", Ok(())),
+        ]);
+        assert_eq!(all.available, ["Ctrl+Shift+F8", "Ctrl+Shift+Escape"]);
+        assert!(all.error.is_none() && all.warning.is_none());
+
+        let partial = summarize_shortcut_results(vec![
+            ("Ctrl+Shift+F8", Err("reserved".into())),
+            ("Ctrl+Shift+Escape", Ok(())),
+        ]);
+        assert_eq!(partial.available, ["Ctrl+Shift+Escape"]);
+        assert!(partial.error.is_none());
+        assert!(partial.warning.unwrap().contains("Ctrl+Shift+F8: reserved"));
+
+        let alternate_conflict = summarize_shortcut_results(vec![
+            ("Ctrl+Shift+F8", Ok(())),
+            ("Ctrl+Shift+Escape", Err("conflict".into())),
+        ]);
+        assert_eq!(alternate_conflict.available, ["Ctrl+Shift+F8"]);
+        assert!(alternate_conflict.error.is_none());
+        assert!(alternate_conflict
+            .warning
+            .unwrap()
+            .contains("Ctrl+Shift+Escape: conflict"));
+
+        let none = summarize_shortcut_results(vec![
+            ("Ctrl+Shift+F8", Err("reserved".into())),
+            ("Ctrl+Shift+Escape", Err("conflict".into())),
+        ]);
+        assert!(none.available.is_empty() && none.warning.is_none());
+        let error = none.error.unwrap();
+        assert!(error.contains("Ctrl+Shift+F8: reserved"));
+        assert!(error.contains("Ctrl+Shift+Escape: conflict"));
+    }
     #[test]
     fn start_delay_is_interruptible_before_first_click() {
         let config: Config = serde_json::from_str(r#"{"steps":[{"kind":"click","button":"left","clicks":1,"position":null,"interval_ms":10}],"repeat":1,"start_delay_ms":60000}"#).unwrap();

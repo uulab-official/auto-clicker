@@ -15,7 +15,9 @@ shopt -s nullglob
 libs=(src-tauri/target/release/deps/libglobal_hotkey-*.rlib)
 [[ ${#libs[@]} == 1 ]] || { echo 'Expected exactly one compiled global-hotkey library' >&2; exit 1; }
 rustc --edition=2021 .github/scripts/macos-click-e2e/queue-id.rs -L dependency=src-tauri/target/release/deps --extern "global_hotkey=${libs[0]}" -o "$work/shortcut-id"
-shortcut_id=$("$work/shortcut-id")
+shortcut=${AUTOCLICKER_TEST_SHORTCUT:-Control+Shift+F8}
+[[ "$shortcut" == 'Control+Shift+F8' || "$shortcut" == 'Control+Shift+Escape' ]] || { echo 'Unexpected test shortcut' >&2; exit 1; }
+shortcut_id=$("$work/shortcut-id" "$shortcut")
 [[ "$shortcut_id" =~ ^[0-9]+$ ]] || { echo 'Invalid shortcut id' >&2; exit 1; }
 swiftc .github/scripts/macos-click-e2e/target.swift -o "$work/target"
 swiftc .github/scripts/macos-click-e2e/control.swift -o "$work/control"
@@ -50,4 +52,4 @@ after=$(grep -c '^click ' "$work/events" || true)
 [[ "$stopped" == "$after" ]] || { cat "$work/app.log"; echo "App continued clicking after in-process Carbon event: $stopped -> $after" >&2; exit 1; }
 "$work/control" dump "$app_pid" >"$work/accessibility.log"
 grep -q 'Start clicking' "$work/accessibility.log" || { cat "$work/accessibility.log"; echo 'App did not return to idle state' >&2; exit 1; }
-echo 'In-process Carbon hotkey event stopped real clicks; physical keyboard and WindowServer delivery were not tested.'
+echo "In-process Carbon hotkey event for $shortcut stopped real clicks; physical keyboard and WindowServer delivery were not tested."
