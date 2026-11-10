@@ -27,7 +27,7 @@ kill -0 "$wm_pid" 2>/dev/null || { cat "$work/openbox.log"; echo 'Openbox did no
 /usr/bin/dbus-monitor --session "interface='org.freedesktop.portal.FileChooser'" >"$work/filechooser-dbus.log" 2>&1 & portal_pid=$!
 sleep 0.2
 /usr/bin/python3 .github/scripts/linux-profile-e2e/drive.py prepare "$work/files"
-src-tauri/target/release/auto-clicker >"$work/app.log" 2>&1 & app_pid=$!
+"${APP_BINARY:-src-tauri/target/release/auto-clicker}" >"$work/app.log" 2>&1 & app_pid=$!
 for _ in $(seq 1 60); do
   xdotool search --onlyvisible --name '^Auto Clicker$' >/dev/null 2>&1 && break
   kill -0 "$app_pid" 2>/dev/null || { cat "$work/app.log"; exit 1; }

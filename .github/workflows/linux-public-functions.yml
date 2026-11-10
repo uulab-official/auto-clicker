@@ -1,0 +1,42 @@
+name: Verify public Linux application functions
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install isolated desktop dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-0 libxdo3 libayatana-appindicator3-1 libfuse2 xvfb xdotool dbus-x11 at-spi2-core python3-pyatspi python3-tk libatk-adaptor openbox
+      - name: Download and verify public v0.1.4 AppImage
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag=v0.1.4
+          metadata=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag")
+          [[ "$(jq -r '.draft or .prerelease' <<< "$metadata")" == false ]]
+          [[ "$(jq -r '.tag_name' <<< "$metadata")" == "$tag" ]]
+          name=Auto.Clicker_0.1.4_amd64.AppImage
+          expected=$(jq -r --arg name "$name" '[.assets[] | select(.name == $name) | .digest] | if length == 1 then .[0] else empty end' <<< "$metadata")
+          [[ "$expected" =~ ^sha256:[0-9a-f]{64}$ ]]
+          mkdir -p "$RUNNER_TEMP/published-app"
+          gh release download "$tag" --pattern "$name" --dir "$RUNNER_TEMP/published-app"
+          cd "$RUNNER_TEMP/published-app"
+          [[ "$expected" == "sha256:$(sha256sum "$name" | cut -d' ' -f1)" ]]
+          chmod +x "$name"
+          "./$name" --appimage-extract > /dev/null
+          echo "APP_BINARY=$PWD/squashfs-root/AppRun" >> "$GITHUB_ENV"
+          echo "Verified public $tag AppImage $expected"
+      - name: Verify public click, sequence and emergency stop
+        run: xvfb-run -a -s '-screen 0 1280x1024x24' dbus-run-session -- bash .github/scripts/linux-click-e2e/run.sh
+      - name: Verify public native settings backup and restoration
+        run: xvfb-run -a -s '-screen 0 1280x1024x24' dbus-run-session -- bash .github/scripts/linux-profile-e2e/run.sh
