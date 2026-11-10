@@ -3,6 +3,7 @@ $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:CI -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw 'Requires a disposable GitHub-hosted runner' }
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
+Add-Type -AssemblyName System.Windows.Forms
 $work = Join-Path $env:RUNNER_TEMP 'auto-clicker-profile-e2e'
 New-Item -ItemType Directory -Force $work | Out-Null
 $exe = Join-Path $env:GITHUB_WORKSPACE 'src-tauri\target\release\auto-clicker.exe'
@@ -39,10 +40,18 @@ function Invoke-AppButton([string]$name) {
   throw "Cannot invoke app button '$name'"
 }
 function Set-Delay([int]$seconds) {
-  $field = Find-AppNode { param($n) $n.Current.Name -like '*Start delay*' -and $n.Current.ControlType -eq [System.Windows.Automation.ControlType]::Spinner }
-  $pattern = $null
-  if ($field.TryGetCurrentPattern([System.Windows.Automation.RangeValuePattern]::Pattern, [ref]$pattern)) { $pattern.SetValue($seconds); return }
-  if ($field.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$pattern)) { $pattern.SetValue([string]$seconds); return }
+  $deadline = (Get-Date).AddSeconds(20)
+  do {
+    try {
+      $field = Find-AppNode { param($n) $n.Current.Name -like '*Start delay*' -and $n.Current.ControlType -eq [System.Windows.Automation.ControlType]::Spinner } 2
+      $field.SetFocus()
+      [System.Windows.Forms.SendKeys]::SendWait('^a')
+      [System.Windows.Forms.SendKeys]::SendWait([string]$seconds)
+      [System.Windows.Forms.SendKeys]::SendWait('{TAB}')
+      Write-Host "Set start delay to $seconds seconds"
+      return
+    } catch { Start-Sleep -Milliseconds 250 }
+  } while ((Get-Date) -lt $deadline)
   throw 'Start delay spinner cannot be edited through UI Automation'
 }
 function Wait-Dialog([string]$title) {
