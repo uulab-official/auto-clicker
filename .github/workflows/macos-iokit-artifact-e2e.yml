@@ -7,7 +7,8 @@ on:
         required: true
         default: v0.1.5
 permissions:
-  contents: read
+  # GitHub requires write permission to list and download draft releases.
+  contents: write
 jobs:
   verify:
     runs-on: macos-latest
@@ -27,7 +28,9 @@ jobs:
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
           case "$(uname -m)" in arm64) arch=aarch64 ;; x86_64) arch=x64 ;; *) exit 1 ;; esac
           name="Auto.Clicker_${RELEASE_TAG#v}_${arch}.dmg"
-          metadata=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")
+          # GitHub's release-by-tag endpoint excludes drafts; list releases
+          # with the authenticated token and require exactly one matching tag.
+          metadata=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[]' | jq -s --arg tag "$RELEASE_TAG" '[.[] | select(.tag_name == $tag)] | if length == 1 then .[0] else error("expected one matching release") end')
           [[ "$(jq -r '.tag_name' <<< "$metadata")" == "$RELEASE_TAG" ]]
           [[ "$(jq -r '.prerelease' <<< "$metadata")" == false ]]
           digest=$(jq -r --arg name "$name" '[.assets[] | select(.name == $name) | .digest] | if length == 1 then .[0] else empty end' <<< "$metadata")
