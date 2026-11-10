@@ -58,13 +58,9 @@ def press(name):
     raise RuntimeError(f'Could not activate {name}')
 
 def delay_field(node):
-    if 'start delay' not in (node.name or '').lower():
-        return False
-    try:
-        node.queryEditableText()
-        return True
-    except (LookupError, RuntimeError, NotImplementedError):
-        return False
+    # WebKitGTK exposes HTML number inputs as "embedded" rather than as
+    # EditableText; grabFocus still targets the actual input element.
+    return 'start delay' in (node.name or '').lower() and node.getRoleName() in ('embedded', 'spin button', 'text')
 
 field = find(delay_field)
 if not field.queryComponent().grabFocus():
