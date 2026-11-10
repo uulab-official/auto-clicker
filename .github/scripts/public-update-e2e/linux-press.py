@@ -9,6 +9,7 @@ probe = len(sys.argv) > 2 and sys.argv[2] == 'probe'
 names = ({'Start clicking', '클릭 시작', 'クリックを開始'} if probe else
          {'Install update', '업데이트 설치', 'アップデートをインストール'})
 seen = set()
+tree_seen = set()
 more_names = {'More options', '추가 옵션', 'その他のオプション'}
 opened_more = False
 
@@ -19,6 +20,14 @@ def walk(node, depth=0):
     try:
         name = node.name or ''
         role = node.getRoleName()
+        if name and (role, name) not in tree_seen:
+            tree_seen.add((role, name))
+            try:
+                actions = node.queryAction()
+                action_names = [actions.getName(i) for i in range(actions.nActions)]
+            except (LookupError, RuntimeError, NotImplementedError, AttributeError):
+                action_names = []
+            print('AT-SPI node:', repr(role), repr(name), 'actions:', action_names, flush=True)
         if not probe and not opened_more and any(name.endswith(label) for label in more_names):
             action = node.queryAction()
             for index in range(action.nActions):
