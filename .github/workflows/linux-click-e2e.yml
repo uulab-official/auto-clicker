@@ -2,6 +2,11 @@ name: Linux isolated click and emergency stop
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Public release tag to test
+        required: true
+        default: v0.1.3
 
 permissions:
   contents: read
@@ -12,16 +17,28 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 20
-          cache: npm
-      - uses: dtolnay/rust-toolchain@stable
       - name: Install isolated desktop dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev xvfb xdotool dbus-x11 at-spi2-core python3-pyatspi python3-tk libatk-adaptor
-      - run: npm ci
-      - run: npm run tauri build -- --no-bundle
+          sudo apt-get install -y libwebkit2gtk-4.1-0 libxdo3 libayatana-appindicator3-1 libfuse2 xvfb xdotool dbus-x11 at-spi2-core python3-pyatspi python3-tk libatk-adaptor
+      - name: Download and verify the published AppImage
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          mkdir -p "$RUNNER_TEMP/published-app"
+          gh release download "$RELEASE_TAG" --pattern '*.AppImage' --dir "$RUNNER_TEMP/published-app"
+          cd "$RUNNER_TEMP/published-app"
+          shopt -s nullglob
+          files=(*.AppImage)
+          [[ ${#files[@]} == 1 ]]
+          expected=$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[] | select(.name | endswith(".AppImage")) | .digest')
+          [[ "$expected" == "sha256:$(sha256sum "${files[0]}" | cut -d' ' -f1)" ]]
+          chmod +x "${files[0]}"
+          "./${files[0]}" --appimage-extract > /dev/null
+          echo "APP_BINARY=$PWD/squashfs-root/AppRun" >> "$GITHUB_ENV"
+          echo "Verified public $RELEASE_TAG AppImage SHA256 $expected"
       - name: Verify click and emergency stop on isolated X11
         run: xvfb-run -a -s '-screen 0 1280x1024x24' dbus-run-session -- bash .github/scripts/linux-click-e2e/run.sh
