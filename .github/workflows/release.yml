@@ -113,6 +113,15 @@ jobs:
             delimiter="SECRET_$(uuidgen)"
             printf '%s<<%s\n%s\n%s\n' "$name" "$delimiter" "${!name}" "$delimiter" >> "$GITHUB_ENV"
           done
+      - name: Guard release tag and draft before upload
+        if: inputs.release_tag != '' || github.event_name == 'push'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+          RELEASE_SHA: ${{ inputs.release_sha || '' }}
+        run: bash .github/scripts/auto-release/guard-upload.sh
+
       - name: Build and upload signed artifacts to draft release
         if: inputs.release_tag != '' || github.event_name == 'push'
         uses: tauri-apps/tauri-action@v1

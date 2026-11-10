@@ -78,6 +78,7 @@ class PrepareGitIntegrationTest(unittest.TestCase):
         shutil.copy(SCRIPT.parent / 'prepare.sh', target / 'prepare.sh')
         shutil.copy(SCRIPT.parent / 'reserve.sh', target / 'reserve.sh')
         shutil.copy(SCRIPT.parent / 'publish.sh', target / 'publish.sh')
+        shutil.copy(SCRIPT.parent / 'guard-upload.sh', target / 'guard-upload.sh')
         shutil.copy(SCRIPT.parent / 'release-notes.md', target / 'release-notes.md')
         (self.repo / 'package.json').write_text('{"version":"0.1.5"}')
         (self.repo / 'package-lock.json').write_text('{"version":"0.1.5","packages":{"":{"version":"0.1.5"}}}')
@@ -241,6 +242,37 @@ else:
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('leaving this release as a draft', result.stdout)
         self.assertEqual(trace, '')
+
+    def guard_upload(self, tag, expected_sha, release=''):
+        release_file = self.root / 'guard-releases'
+        release_file.write_text(release)
+        fake_gh = self.bin / 'gh'
+        fake_gh.write_text('#!/bin/sh\ncat "$GH_FAKE_RELEASES"\n')
+        fake_gh.chmod(0o755)
+        env = dict(os.environ, PATH=f'{self.bin}:{os.environ["PATH"]}', RELEASE_SHA=expected_sha,
+                   RELEASE_TAG=tag, GITHUB_REPOSITORY='owner/repo', GH_FAKE_RELEASES=str(release_file))
+        return subprocess.run(['bash', '.github/scripts/auto-release/guard-upload.sh'], cwd=self.repo,
+                              env=env, text=True, capture_output=True)
+
+    def test_upload_guard_allows_new_and_draft_but_refuses_public(self):
+        self.assertEqual(self.guard_upload('v0.1.5', self.source).returncode, 0)
+        draft = json.dumps({'tag_name': 'v0.1.5', 'draft': True})
+        self.assertEqual(self.guard_upload('v0.1.5', self.source, draft).returncode, 0)
+        public = json.dumps({'tag_name': 'v0.1.5', 'draft': False})
+        result = self.guard_upload('v0.1.5', self.source, public)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('refusing to upload', result.stderr)
+
+    def test_upload_guard_rejects_moved_tag(self):
+        self.run_command('git', 'commit', '--allow-empty', '-m', 'other commit')
+        result = self.guard_upload('v0.1.5', self.run_command('git', 'rev-parse', 'HEAD').strip())
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('different commit', result.stderr)
+
+    def test_upload_guard_dereferences_annotated_manual_tag(self):
+        self.run_command('git', 'tag', '-a', 'v0.1.6', '-m', 'annotated')
+        self.run_command('git', 'push', 'origin', 'refs/tags/v0.1.6')
+        self.assertEqual(self.guard_upload('v0.1.6', '').returncode, 0)
 
 
 if __name__ == '__main__':
