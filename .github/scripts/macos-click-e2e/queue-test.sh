@@ -11,16 +11,22 @@ cleanup() {
 }
 trap cleanup EXIT
 clang -dynamiclib -fblocks -framework Carbon -framework CoreFoundation .github/scripts/macos-click-e2e/queue-hotkey.c -o "$work/interposer.dylib"
+shopt -s nullglob
+libs=(src-tauri/target/release/deps/libglobal_hotkey-*.rlib)
+[[ ${#libs[@]} == 1 ]] || { echo 'Expected exactly one compiled global-hotkey library' >&2; exit 1; }
+rustc --edition=2021 .github/scripts/macos-click-e2e/queue-id.rs -L dependency=src-tauri/target/release/deps --extern "global_hotkey=${libs[0]}" -o "$work/shortcut-id"
+shortcut_id=$("$work/shortcut-id")
+[[ "$shortcut_id" =~ ^[0-9]+$ ]] || { echo 'Invalid shortcut id' >&2; exit 1; }
 swiftc .github/scripts/macos-click-e2e/target.swift -o "$work/target"
 swiftc .github/scripts/macos-click-e2e/control.swift -o "$work/control"
 "$work/target" "$work/events" >"$work/target.log" 2>&1 & target_pid=$!
-DYLD_INSERT_LIBRARIES="$work/interposer.dylib" AUTOCLICKER_QUEUE_TEST_SIGNAL="$work/signal" src-tauri/target/release/auto-clicker >"$work/app.log" 2>&1 & app_pid=$!
+DYLD_INSERT_LIBRARIES="$work/interposer.dylib" AUTOCLICKER_QUEUE_TEST_SIGNAL="$work/signal" AUTOCLICKER_QUEUE_TEST_ID="$shortcut_id" src-tauri/target/release/auto-clicker >"$work/app.log" 2>&1 & app_pid=$!
 for _ in $(seq 1 60); do
-  [[ -s "$work/events" ]] && grep -q 'queue-test: observed F8 registration' "$work/app.log" && break
+  [[ -s "$work/events" ]] && grep -q 'queue-test: prepared shortcut id=' "$work/app.log" && break
   kill -0 "$target_pid" && kill -0 "$app_pid" || { cat "$work/target.log" "$work/app.log"; exit 1; }
   sleep 1
 done
-if ! grep -q 'queue-test: observed F8 registration' "$work/app.log"; then cat "$work/app.log"; echo 'Test interposer did not observe the app registering its shortcut' >&2; exit 1; fi
+if ! grep -q 'queue-test: prepared shortcut id=' "$work/app.log"; then cat "$work/app.log"; echo 'Test library did not initialize in the app process' >&2; exit 1; fi
 read -r label x y < "$work/events"
 [[ "$label" == point ]] || { echo 'Target did not start' >&2; exit 1; }
 "$work/control" move "$x" "$y"
@@ -42,4 +48,4 @@ after=$(grep -c '^click ' "$work/events" || true)
 [[ "$stopped" == "$after" ]] || { cat "$work/app.log"; echo "App continued clicking after in-process Carbon event: $stopped -> $after" >&2; exit 1; }
 "$work/control" dump "$app_pid" >"$work/accessibility.log"
 grep -q 'Start clicking' "$work/accessibility.log" || { cat "$work/accessibility.log"; echo 'App did not return to idle state' >&2; exit 1; }
-echo 'App registration and in-process Carbon hotkey event stopped real clicks; physical keyboard and WindowServer delivery were not tested.'
+echo 'In-process Carbon hotkey event stopped real clicks; physical keyboard and WindowServer delivery were not tested.'
