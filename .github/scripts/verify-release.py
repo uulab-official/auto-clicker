@@ -31,6 +31,9 @@ def main():
         raise ValueError('Release must remain a draft during verification')
     asset_ids = {a['id'] for a in release['assets']}
     expected = ('darwin-aarch64', 'darwin-x86_64', 'linux-x86_64', 'windows-x86_64')
+    missing = set(expected) - set(manifest['platforms'])
+    if missing:
+        raise ValueError(f'Missing required platforms: {sorted(missing)}')
     url_pattern = re.compile(rf'https://api\.github\.com/repos/{re.escape(repository)}/releases/assets/(\d+)')
     with tempfile.TemporaryDirectory(prefix='verify-updater-') as tmp:
         tmp = Path(tmp)
@@ -39,8 +42,9 @@ def main():
         verifier = Path('.github/scripts/updater-verify/target/debug/updater-verify').resolve()
         if not verifier.is_file():
             raise ValueError('Build the updater verifier before verifying the release')
-        for platform in expected:
-            artifact = manifest['platforms'][platform]
+        # Bundle-specific keys take precedence in Tauri, so every advertised
+        # entry must be authenticated, not only the four generic fallbacks.
+        for platform, artifact in manifest['platforms'].items():
             match = url_pattern.fullmatch(artifact['url'])
             if not match or int(match[1]) not in asset_ids:
                 raise ValueError(f'{platform}: URL is not an asset in this draft')

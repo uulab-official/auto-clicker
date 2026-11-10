@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Runs exclusively on a disposable GitHub Actions VM with its own Xvfb display.
 set -euo pipefail
+expected_version="${EXPECTED_UPDATE_VERSION:-0.1.1}"
+if [[ ! "$expected_version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ || "$expected_version" == 0.0.* || "$expected_version" == 0.1.0 ]]; then
+  echo 'Expected target must be a stable version newer than 0.1.0.' >&2
+  exit 1
+fi
 work="$(mktemp -d)"
 app_pid=''
 cleanup() {
@@ -13,10 +18,10 @@ export XDG_CONFIG_HOME="$work/config" XDG_DATA_HOME="$work/data" XDG_CACHE_HOME=
 export APPIMAGE_EXTRACT_AND_RUN=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 GDK_BACKEND=x11 LANG=C.UTF-8 NO_AT_BRIDGE=0 GTK_MODULES=atk-bridge
 if [[ "${PUBLIC_UPDATE_PROBE_ONLY:-0}" != 1 ]]; then
 curl --fail --location --silent --show-error -o "$work/latest.json" 'https://github.com/uulab-official/auto-clicker/releases/latest/download/latest.json'
-python3 - "$work/latest.json" "$work/target.url" <<'PY'
+python3 - "$work/latest.json" "$work/target.url" "$expected_version" <<'PY'
 import json, pathlib, sys
 m=json.loads(pathlib.Path(sys.argv[1]).read_text())
-if m['version'] != '0.1.1': raise SystemExit('Latest public release is not 0.1.1')
+if m['version'] != sys.argv[3]: raise SystemExit('Latest public release does not match expected version')
 pathlib.Path(sys.argv[2]).write_text(m['platforms']['linux-x86_64']['url'])
 PY
 curl --fail --location --silent --show-error -H 'Accept: application/octet-stream' -H 'User-Agent: auto-clicker-release-verification' -o "$work/expected.AppImage" "$(cat "$work/target.url")"
@@ -53,7 +58,7 @@ for _ in $(seq 1 180); do
   sleep 1
 done
 [[ "$updated" == 1 ]] || { cat "$work/app.log"; echo 'Public update was not installed' >&2; exit 1; }
-echo 'Actual published 0.1.0 AppImage updated to public 0.1.1; payload SHA256 matched'
+echo "Actual published 0.1.0 AppImage updated to public $expected_version; payload SHA256 matched"
 kill -- "-$app_pid" 2>/dev/null || true; wait "$app_pid" 2>/dev/null || true; app_pid=''
 setsid "$work/install/Auto Clicker.AppImage" >"$work/relaunch.log" 2>&1 &
 app_pid=$!

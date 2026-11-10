@@ -2,28 +2,16 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import './style.css';
 import { translateDom, type Language } from './i18n';
+import { defaultClick, defaults, parseSettings, type Settings, type Click, type Step, type Position } from './settings';
+import { toggleDisabled, type Status } from './run-state';
 
-type Position = { x: number; y: number };
-type Click = { kind: 'click'; button: 'left' | 'right' | 'middle'; clicks: 1 | 2; position: Position | null; interval_ms: number };
-type Wait = { kind: 'wait'; duration_ms: number };
-type Step = Click | Wait;
-type Status = { running: boolean; completed_cycles: number; error: string | null };
-type Settings = { mode: 'simple' | 'sequence'; simple: Click; steps: Step[]; repeat: number | null };
-const defaultClick = (): Click => ({ kind: 'click', button: 'left', clicks: 1, position: null, interval_ms: 1000 });
-const defaults = (): Settings => ({ mode: 'simple', simple: defaultClick(), steps: [defaultClick()], repeat: null });
 const key = 'open-clicker-settings-v1';
 let settings = defaults();
 let language: Language = navigator.language.toLowerCase().startsWith('ko') ? 'ko' : navigator.language.toLowerCase().startsWith('ja') ? 'ja' : 'en';
 try { const saved = localStorage.getItem('open-clicker-language'); if (saved === 'en' || saved === 'ko' || saved === 'ja') language = saved; } catch { /* use system language */ }
-// Stored settings are optional convenience data, not a source of trusted executable commands.
-try {
-  const raw = localStorage.getItem(key);
-  if (raw) {
-    const data = JSON.parse(raw) as Settings;
-    if ((data.mode === 'simple' || data.mode === 'sequence') && data.simple?.kind === 'click' && Array.isArray(data.steps)) settings = data;
-  }
-} catch { /* start with defaults if storage is unavailable or invalid */ }
-let status: Status = { running: false, completed_cycles: 0, error: null };
+try { settings = parseSettings(localStorage.getItem(key)); } catch { /* start with defaults if storage is unavailable */ }
+let status: Status = { running: false, completed_cycles: 0, error: null, shortcut_error: null };
+let statusReady = false;
 let notice = '';
 let capturing = false;
 type UpdateInfo = { version: string; current_version: string; notes: string | null };
@@ -45,24 +33,34 @@ function clickFields(step: Click, index: string) {
   </div>
   <div class="location"><div><span class="label">Click location</span><p class="hint">${position ? `Fixed position · ${escape(position.x)}, ${escape(position.y)}` : 'Wherever the pointer is when the click happens'}</p></div>
     <div class="location-actions"><button type="button" class="button secondary small" data-action="capture" data-index="${index}"${disabled(capturing)}>Pick position</button>${position ? `<button type="button" class="button text small" data-action="clear-position" data-index="${index}">Use pointer</button>` : ''}</div></div>
-  ${position ? `<div class="coordinate-grid"><label>X coordinate<input type="number" step="1" data-index="${index}" data-field="x" value="${escape(position.x)}" required></label><label>Y coordinate<input type="number" step="1" data-index="${index}" data-field="y" value="${escape(position.y)}" required></label></div>` : ''}`;
+  ${position ? `<div class="coordinate-grid"><label>X coordinate<input type="number" step="1" min="-2147483648" max="2147483647" data-index="${index}" data-field="x" value="${escape(position.x)}" required></label><label>Y coordinate<input type="number" step="1" min="-2147483648" max="2147483647" data-index="${index}" data-field="y" value="${escape(position.y)}" required></label></div>` : ''}`;
 }
 function render() {
+  // Status and update events can arrive while a field is being edited. Replacing
+  // the DOM must not discard the user's unfinished value or keyboard focus.
+  const active = document.activeElement instanceof HTMLElement && app.contains(document.activeElement) ? document.activeElement : null;
+  let selector = '';
+  if (active?.id) selector = `#${CSS.escape(active.id)}`;
+  else if (active?.dataset.field && active.dataset.index !== undefined) selector = `[data-field="${CSS.escape(active.dataset.field)}"][data-index="${CSS.escape(active.dataset.index)}"]`;
+  else if (active?.dataset.action) selector = `[data-action="${CSS.escape(active.dataset.action)}"]${active.dataset.index !== undefined ? `[data-index="${CSS.escape(active.dataset.index)}"]` : ''}${active.dataset.mode ? `[data-mode="${CSS.escape(active.dataset.mode)}"]` : ''}`;
+  else if (active instanceof HTMLInputElement && active.name) selector = `input[name="${CSS.escape(active.name)}"][value="${CSS.escape(active.value)}"]`;
+  const editingValue = active instanceof HTMLInputElement && active.type === 'number' ? active.value : null;
   const sequence = settings.mode === 'sequence';
   app.innerHTML = `<main class="shell">
-    <header class="topbar"><div class="brand"><span class="brand-icon" aria-hidden="true">✳</span><div><strong>Open Clicker</strong><span class="brand-sub">A little automation, in your control.</span></div></div><div class="top-actions"><label class="language-label"><span class="sr-only">Language</span><select id="language" aria-label="Language"><option value="en"${language === 'en' ? ' selected' : ''}>English</option><option value="ko"${language === 'ko' ? ' selected' : ''}>한국어</option><option value="ja"${language === 'ja' ? ' selected' : ''}>日本語</option></select></label><span class="open-source">OPEN SOURCE</span></div></header>
+    <header class="topbar"><div class="brand"><span class="brand-icon" aria-hidden="true">✳</span><div><strong>Auto Clicker</strong><span class="brand-sub">A little automation, in your control.</span></div></div><div class="top-actions"><label class="language-label"><span class="sr-only">Language</span><select id="language" aria-label="Language"><option value="en"${language === 'en' ? ' selected' : ''}>English</option><option value="ko"${language === 'ko' ? ' selected' : ''}>한국어</option><option value="ja"${language === 'ja' ? ' selected' : ''}>日本語</option></select></label><span class="open-source">OPEN SOURCE</span></div></header>
     <section class="intro"><div><p class="eyebrow">DESKTOP AUTOMATION</p><h1>Make every click count.</h1><p>Set up a click or build a sequence. Start when you're ready.</p></div><div class="status ${status.running ? 'active' : ''}" role="status"><span class="status-dot"></span>${status.running ? 'Running' : 'Ready'}</div></section>
+    ${status.shortcut_error ? `<div class="alert" role="alert"><strong>Emergency stop shortcut unavailable. Starting is disabled.</strong><p class="hint">${escape(status.shortcut_error)}</p></div>` : ''}
     ${notice || status.error ? `<div class="alert" role="alert">${escape(notice || status.error)}</div>` : ''}
     <div class="layout"><section class="workspace" aria-label="Click configuration">
-      <div class="tabs" role="tablist" aria-label="Click mode"><button role="tab" aria-selected="${!sequence}" data-action="mode" data-mode="simple">Simple click</button><button role="tab" aria-selected="${sequence}" data-action="mode" data-mode="sequence">Sequence</button></div>
+      <div class="tabs" role="group" aria-label="Click mode"><button type="button" aria-pressed="${!sequence}" data-action="mode" data-mode="simple">Simple click</button><button type="button" aria-pressed="${sequence}" data-action="mode" data-mode="sequence">Sequence</button></div>
       <form id="config-form"><fieldset${disabled(status.running || capturing)}><legend class="sr-only">Click configuration</legend>
       ${sequence ? `<div class="section-heading"><div><p class="eyebrow">YOUR SEQUENCE</p><h2>Steps</h2><p>Actions run from top to bottom, then repeat.</p></div><span class="count">${settings.steps.length} ${settings.steps.length === 1 ? 'STEP' : 'STEPS'}</span></div>
       <div class="steps">${settings.steps.map((step, i) => `<article class="step"><div class="step-header"><div class="step-title"><span class="step-number">${String(i + 1).padStart(2, '0')}</span><strong>${step.kind === 'click' ? 'Click' : 'Wait'}</strong></div><div class="step-actions"><button type="button" aria-label="Move step ${i+1} up" data-action="up" data-index="${i}"${disabled(i === 0)}>↑</button><button type="button" aria-label="Move step ${i+1} down" data-action="down" data-index="${i}"${disabled(i === settings.steps.length - 1)}>↓</button><button type="button" aria-label="Remove step ${i+1}" data-action="remove" data-index="${i}">×</button></div></div>${step.kind === 'click' ? clickFields(step, String(i)) : `<label class="wait-field">Wait duration <span class="unit">ms</span><input type="number" min="1" max="86400000" step="1" data-index="${i}" data-field="duration_ms" value="${escape(step.duration_ms)}" required></label>`}</article>`).join('') || '<div class="empty">Your sequence is empty. Add a click or a wait to get started.</div>'}</div>
       <div class="add-actions"><button type="button" class="button secondary" data-action="add-click">+ Add click</button><button type="button" class="button secondary" data-action="add-wait">+ Add wait</button></div>` : `<div class="section-heading"><div><p class="eyebrow">SINGLE ACTION</p><h2>Click settings</h2><p>Choose how and where to click.</p></div></div><div class="simple-fields">${clickFields(settings.simple, 'simple')}</div>`}
-      <div class="repeat-section"><div><span class="label">Repeat</span><p class="hint">Choose when the run should stop.</p></div><div class="repeat-controls"><label class="radio"><input type="radio" name="repeatMode" value="forever"${checked(settings.repeat === null)}> Until stopped</label><label class="radio"><input type="radio" name="repeatMode" value="count"${checked(settings.repeat !== null)}> <input aria-label="Number of repetitions" id="repeat-count" type="number" min="1" max="1000000" step="1" value="${escape(settings.repeat ?? 1)}"${disabled(settings.repeat === null)}> times</label></div></div>
+      <div class="repeat-section"><div><span class="label">Repeat</span><p class="hint">Choose when the run should stop.</p></div><div class="repeat-controls"><label class="radio"><input type="radio" name="repeatMode" value="forever"${checked(settings.repeat === null)}> Until stopped</label><label class="radio"><input type="radio" name="repeatMode" value="count"${checked(settings.repeat !== null)}> <input aria-label="Number of repetitions" id="repeat-count" type="number" min="1" max="1000000" step="1" required value="${escape(settings.repeat ?? 1)}"${disabled(settings.repeat === null)}> times</label></div></div>
       </fieldset></form></section>
       <aside class="control-panel"><div><p class="eyebrow">RUN CONTROL</p><h2>${status.running ? 'In progress' : 'Ready when you are'}</h2><p>${status.running ? `Completed cycles: ${status.completed_cycles}` : 'Review your settings, then start clicking.'}</p></div>
-      <button type="button" class="button primary ${status.running ? 'stop' : ''}" data-action="toggle"${disabled(capturing || updateState === 'installing')}>${status.running ? '<span aria-hidden="true">■</span> Stop clicking' : '<span aria-hidden="true">▶</span> Start clicking'}</button>
+      <button type="button" class="button primary ${status.running ? 'stop' : ''}" data-action="toggle"${disabled(toggleDisabled(status, statusReady, capturing, updateState === 'installing'))}>${status.running ? '<span aria-hidden="true">■</span> Stop clicking' : '<span aria-hidden="true">▶</span> Start clicking'}</button>
       <div class="shortcut"><span>Global emergency stop</span><kbd>Ctrl</kbd><span>+</span><kbd>Shift</kbd><span>+</span><kbd>F8</kbd></div><p class="safety">You can stop a run at any time with the shortcut. Check system permissions if clicking is unavailable.</p>
       <div class="updates"><span class="label">App updates</span>
       <p class="hint">${updateState === 'checking' ? 'Checking for updates…' : updateState === 'installing' ? 'Installing update…' : updateState === 'current' ? 'You have the latest version.' : updateState === 'installed' ? 'Update installed. Restart the app to use it.' : updateState === 'available' && updateInfo ? `Version ${escape(updateInfo.version)} is available.` : updateState === 'error' ? escape(updateError) : 'Updates are checked on startup. Installation requires your choice.'}</p>
@@ -71,9 +69,17 @@ function render() {
     <footer><span>Built for the way you work.</span><span>Settings stay on this device.</span></footer></main>`;
   document.documentElement.lang = language;
   translateDom(app, language);
+  if (selector) {
+    const replacement = app.querySelector<HTMLElement>(selector);
+    if (replacement && !(replacement instanceof HTMLButtonElement && replacement.disabled) && !(replacement instanceof HTMLInputElement && replacement.disabled)) {
+      if (editingValue !== null && replacement instanceof HTMLInputElement) replacement.value = editingValue;
+      replacement.focus({ preventScroll: true });
+    }
+  }
 }
 function stepAt(index: string): Step { return index === 'simple' ? settings.simple : settings.steps[Number(index)]; }
 function changeInput(target: HTMLInputElement | HTMLSelectElement) {
+  if (target instanceof HTMLInputElement && target.type === 'number' && (!target.value || !target.validity.valid)) return;
   if (target.name === 'repeatMode') { settings.repeat = target.value === 'forever' ? null : 1; save(); render(); return; }
   if (target.id === 'repeat-count') { settings.repeat = Number(target.value); save(); return; }
   const index = target.dataset.index, field = target.dataset.field;
@@ -103,11 +109,12 @@ app.addEventListener('click', async e => {
   if (action === 'install-update') {
     if (!updateInfo || status.running) return;
     updateState = 'installing'; render();
-    try { await invoke('install_update'); updateState = 'installed'; }
+    try { await invoke('install_update', { expectedVersion: updateInfo.version }); updateState = 'installed'; }
     catch (error) { updateState = 'error'; updateError = String(error); }
     render(); return;
   }
   if (action === 'toggle') {
+    if (toggleDisabled(status, statusReady, capturing, updateState === 'installing')) return;
     notice = '';
     if (status.running) { try { await invoke('stop_run'); } catch (error) { notice = String(error); render(); } return; }
     const form = document.querySelector<HTMLFormElement>('#config-form')!;
@@ -141,4 +148,4 @@ render();
 void invoke<UpdateInfo | null>('check_update').then(info => {
   updateInfo = info; updateState = info ? 'available' : 'current'; render();
 }).catch(() => { updateState = 'idle'; render(); /* manual checks report the error */ });
-void listen<Status>('run-status', event => { status = event.payload; render(); }).then(() => invoke<Status>('get_status')).then(value => { status = value; render(); }).catch(error => { notice = `Desktop connection unavailable: ${String(error)}`; render(); });
+void listen<Status>('run-status', event => { status = event.payload; statusReady = true; render(); }).then(() => invoke<Status>('get_status')).then(value => { status = value; statusReady = true; render(); }).catch(error => { notice = `Desktop connection unavailable: ${String(error)}`; render(); });

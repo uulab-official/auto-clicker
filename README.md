@@ -10,7 +10,8 @@ use GitHub Releases.
 Auto Clicker는 Rust와 Tauri로 만든 오픈소스 데스크톱 자동 클릭 도구입니다.
 단순 반복 클릭과 여러 위치를 순서대로 클릭하는 매크로를 지원합니다. 실행은 앱에서
 시작하며 `Ctrl+Shift+F8`은 실행을 정지합니다. macOS에서는 손쉬운 사용 권한이
-필요하고 Linux는 X11을 우선 지원합니다. Wayland 동작은 보장되지 않습니다.
+필요합니다. Linux에서는 전역 긴급 정지를 보장할 수 없는 Wayland 세션의
+클릭 실행을 차단하므로 X11 세션을 사용하세요.
 개발 환경과 빌드 방법은 아래 Development 항목을 참고하세요.
 
 ## 日本語
@@ -18,8 +19,8 @@ Auto Clicker는 Rust와 Tauri로 만든 오픈소스 데스크톱 자동 클릭 
 Auto Clicker は Rust と Tauri で作られたオープンソースのデスクトップ用自動
 クリックツールです。単純な繰り返しクリックと、複数の位置を順番にクリックする
 マクロに対応します。アプリから開始し、`Ctrl+Shift+F8` で停止できます。
-macOS ではアクセシビリティの許可が必要です。Linux は X11 を優先し、Wayland
-での動作は保証されません。開発とビルドの手順は下記 Development を参照してください。
+macOS ではアクセシビリティの許可が必要です。Linux の Wayland セッションでは
+緊急停止を保証できないためクリックを無効にしています。X11 を使用してください。開発とビルドの手順は下記 Development を参照してください。
 
 ## Features
 
@@ -43,8 +44,8 @@ input permissions and display-server restrictions apply; see below.
   Applications running with elevated privileges or protected applications may
   not accept synthetic input from a normally launched app.
 - **Linux:** The initial input and global-shortcut implementation targets X11.
-  Wayland support is not guaranteed: desktop environments restrict simulated
-  input and global shortcuts in different ways. Use an X11 session if needed.
+  Wayland sessions cannot guarantee the emergency stop shortcut, so clicking
+  is disabled in those sessions. Sign in to an X11 session to use the app.
   The app must be able to register its stop shortcut before it starts clicking.
 
 Behavior on a particular OS, display server, application, or multi-monitor setup
@@ -53,7 +54,7 @@ that input injection works there.
 
 ## Development
 
-Install a current stable [Rust toolchain](https://rustup.rs/), Node.js 20 or
+Install a current stable [Rust toolchain](https://rustup.rs/), Node.js 22.18 or
 newer, npm, and the [Tauri system prerequisites](https://v2.tauri.app/start/prerequisites/)
 for your platform. On macOS install Xcode Command Line Tools; on Windows install
 Microsoft C++ Build Tools and WebView2 as described in the Tauri guide.
@@ -77,6 +78,7 @@ To run the frontend build, Rust tests, and a production desktop build:
 
 ```sh
 npm run build
+npm test
 cargo test --manifest-path src-tauri/Cargo.toml
 npm run tauri build
 ```

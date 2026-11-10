@@ -52,7 +52,7 @@ fixture = """        .setup(|app| {
                     match check_update(handle.clone(), handle.state::<PendingUpdate>()).await {
                         Ok(Some(info)) => {
                             eprintln!("fixture: update {} available", info.version);
-                            match install_update(handle.clone(), handle.state::<PendingUpdate>()).await {
+                            match install_update(handle.clone(), handle.state::<PendingUpdate>(), info.version).await {
                                 Ok(()) => eprintln!("fixture: update installed"),
                                 Err(error) => eprintln!("fixture: installation failed: {error}"),
                             }

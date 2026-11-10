@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Runs only on a disposable GitHub macOS VM. Uses targeted AX, not host input.
 set -euo pipefail
+expected_version="${EXPECTED_UPDATE_VERSION:-0.1.1}"
+if [[ ! "$expected_version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ || "$expected_version" == 0.0.* || "$expected_version" == 0.1.0 ]]; then
+  echo 'Expected target must be a stable version newer than 0.1.0.' >&2
+  exit 1
+fi
 work="$(cd "$(mktemp -d)" && pwd -P)"
 app_pid=''
 cleanup() {
@@ -18,10 +23,10 @@ case "$(uname -m)" in
 esac
 if [[ "${PUBLIC_UPDATE_PROBE_ONLY:-0}" != 1 ]]; then
 curl --fail --location --silent --show-error -o "$work/latest.json" 'https://github.com/uulab-official/auto-clicker/releases/latest/download/latest.json'
-python3 - "$work/latest.json" "$work/target.url" "$platform" <<'PY'
+python3 - "$work/latest.json" "$work/target.url" "$platform" "$expected_version" <<'PY'
 import json, pathlib, sys
 m=json.loads(pathlib.Path(sys.argv[1]).read_text())
-if m['version'] != '0.1.1': raise SystemExit('Latest public release is not 0.1.1')
+if m['version'] != sys.argv[4]: raise SystemExit('Latest public release does not match expected version')
 pathlib.Path(sys.argv[2]).write_text(m['platforms'][sys.argv[3]]['url'])
 PY
 curl --fail --location --silent --show-error -H 'Accept: application/octet-stream' -H 'User-Agent: auto-clicker-release-verification' -o "$work/update.tar.gz" "$(cat "$work/target.url")"
@@ -52,7 +57,7 @@ fi
 updated=0
 for _ in $(seq 1 180); do
   version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist" 2>/dev/null || true)
-  if [[ "$version" == '0.1.1' ]]; then
+  if [[ "$version" == "$expected_version" ]]; then
     hash=$(shasum -a 256 "$app/Contents/MacOS/auto-clicker" | awk '{print $1}')
     if [[ "$hash" == "$expected_hash" ]]; then updated=1; break; fi
   fi
@@ -62,7 +67,7 @@ done
 codesign --verify --deep --strict "$app"
 xcrun stapler validate "$app"
 spctl --assess --type execute --verbose=2 "$app"
-echo 'Original published 0.1.0 updated to public notarized 0.1.1 and executable SHA256 matched'
+echo "Original published 0.1.0 updated to public notarized $expected_version and executable SHA256 matched"
 kill "$app_pid" 2>/dev/null || true; wait "$app_pid" 2>/dev/null || true; app_pid=''
 "$app/Contents/MacOS/auto-clicker" >"$work/relaunch.log" 2>&1 & app_pid=$!
 sleep 8

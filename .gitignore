@@ -10,3 +10,5 @@ src-tauri/gen/
 
 __pycache__/
 *.pyc
+
+.playwright-cli/

@@ -2,6 +2,10 @@ name: Public release update verification
 on:
   workflow_dispatch:
     inputs:
+      target_version:
+        description: Expected latest public release version (MAJOR.MINOR.PATCH)
+        required: true
+        default: '0.1.1'
       probe_only:
         description: Test accessibility of the original application without starting an update
         type: boolean
@@ -9,6 +13,7 @@ on:
 permissions:
   contents: read
 env:
+  EXPECTED_UPDATE_VERSION: ${{ inputs.target_version }}
   PUBLIC_UPDATE_PROBE_ONLY: ${{ inputs.probe_only && '1' || '0' }}
 jobs:
   linux:

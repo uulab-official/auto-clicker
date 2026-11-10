@@ -13,6 +13,13 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use tauri_plugin_updater::{Update, UpdaterExt};
 
 const SHORTCUT: &str = "Control+Shift+F8";
+#[cfg(any(target_os = "linux", test))]
+fn is_wayland_session(session_type: Option<&str>, wayland_display: Option<&str>) -> bool {
+    match session_type.filter(|s| !s.is_empty()) {
+        Some(value) => value.eq_ignore_ascii_case("wayland"),
+        None => wayland_display.is_some_and(|value| !value.is_empty()),
+    }
+}
 #[derive(Clone, Serialize)]
 struct Status {
     running: bool,
@@ -26,7 +33,40 @@ struct Inner {
     installing: bool,
 }
 struct AppState(Mutex<Inner>);
-struct PendingUpdate(Mutex<Option<Update>>);
+struct UpdateSlot<T> {
+    generation: u64,
+    candidate: Option<(String, T)>,
+}
+impl<T> Default for UpdateSlot<T> {
+    fn default() -> Self {
+        Self {
+            generation: 0,
+            candidate: None,
+        }
+    }
+}
+impl<T> UpdateSlot<T> {
+    fn begin_check(&mut self) -> u64 {
+        self.generation = self.generation.wrapping_add(1);
+        self.candidate = None;
+        self.generation
+    }
+    fn finish_check(&mut self, generation: u64, candidate: Option<(String, T)>) -> bool {
+        if generation != self.generation {
+            return false;
+        }
+        self.candidate = candidate;
+        true
+    }
+    fn take_approved(&mut self, version: &str) -> Result<T, String> {
+        match &self.candidate {
+            Some((candidate_version, _)) if candidate_version == version => {}
+            _ => return Err("The selected update is no longer available; check again.".into()),
+        }
+        Ok(self.candidate.take().expect("candidate checked above").1)
+    }
+}
+struct PendingUpdate(Mutex<UpdateSlot<Update>>);
 
 #[derive(Serialize)]
 struct UpdateInfo {
@@ -40,7 +80,11 @@ async fn check_update(
     app: tauri::AppHandle,
     pending: tauri::State<'_, PendingUpdate>,
 ) -> Result<Option<UpdateInfo>, String> {
-    *pending.0.lock().map_err(|_| "Update state unavailable")? = None;
+    let generation = pending
+        .0
+        .lock()
+        .map_err(|_| "Update state unavailable")?
+        .begin_check();
     let update = app
         .updater()
         .map_err(|e| e.to_string())?
@@ -52,7 +96,14 @@ async fn check_update(
         current_version: u.current_version.clone(),
         notes: u.body.clone(),
     });
-    *pending.0.lock().map_err(|_| "Update state unavailable")? = update;
+    if !pending
+        .0
+        .lock()
+        .map_err(|_| "Update state unavailable")?
+        .finish_check(generation, update.map(|u| (u.version.clone(), u)))
+    {
+        return Err("This update check was superseded by a newer request.".into());
+    }
     Ok(info)
 }
 
@@ -70,6 +121,7 @@ impl Drop for InstallGuard {
 async fn install_update(
     app: tauri::AppHandle,
     pending: tauri::State<'_, PendingUpdate>,
+    expected_version: String,
 ) -> Result<(), String> {
     {
         let state = app.state::<AppState>();
@@ -87,8 +139,7 @@ async fn install_update(
         .0
         .lock()
         .map_err(|_| "Update state unavailable")?
-        .take()
-        .ok_or("Check for an update first.")?;
+        .take_approved(&expected_version)?;
     update
         .download_and_install(|_, _| {}, || {})
         .await
@@ -111,6 +162,10 @@ fn sleep_interruptibly(cancel: &AtomicBool, ms: u64) -> bool {
         }
         std::thread::sleep(remaining.min(Duration::from_millis(10)));
     }
+}
+fn position_matches(target: Position, actual: (i32, i32)) -> bool {
+    (i64::from(target.x) - i64::from(actual.0)).abs() <= 2
+        && (i64::from(target.y) - i64::from(actual.1)).abs() <= 2
 }
 fn execute(
     config: &Config,
@@ -192,9 +247,31 @@ fn start(app: &tauri::AppHandle, config: Config) -> Result<(), String> {
                     } = step
                     {
                         if let Some(pos) = position {
+                            if cancel.load(Ordering::Acquire) {
+                                return Ok(());
+                            }
                             enigo
                                 .move_mouse(pos.x, pos.y, Coordinate::Abs)
                                 .map_err(|e| e.to_string())?;
+                            // Backends may clamp an unavailable display or reject a move silently.
+                            // Give the OS time to process the move, but never click at a wrong point.
+                            let mut matched = false;
+                            for attempt in 0..=10 {
+                                if cancel.load(Ordering::Acquire) {
+                                    return Ok(());
+                                }
+                                let actual = enigo.location().map_err(|e| e.to_string())?;
+                                if position_matches(*pos, actual) {
+                                    matched = true;
+                                    break;
+                                }
+                                if attempt < 10 && !sleep_interruptibly(&cancel, 10) {
+                                    return Ok(());
+                                }
+                            }
+                            if !matched {
+                                return Err(format!("Could not move to ({}, {}). Check the display layout or permissions; this step was not clicked.", pos.x, pos.y));
+                            }
                         }
                         let button = match button {
                             MouseButton::Left => Button::Left,
@@ -271,26 +348,37 @@ pub fn run() {
             cancel: None,
             installing: false,
         })))
-        .manage(PendingUpdate(Mutex::new(None)))
+        .manage(PendingUpdate(Mutex::new(UpdateSlot::default())))
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(
-            tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, _, event| {
-                    if event.state != ShortcutState::Pressed {
-                        return;
-                    }
-                    stop(app);
-                })
-                .build(),
-        )
         .setup(|app| {
-            if let Err(e) = app.global_shortcut().register(SHORTCUT) {
+            #[cfg(target_os = "linux")]
+            let unsafe_session = is_wayland_session(
+                std::env::var("XDG_SESSION_TYPE").ok().as_deref(),
+                std::env::var("WAYLAND_DISPLAY").ok().as_deref(),
+            );
+            #[cfg(not(target_os = "linux"))]
+            let unsafe_session = false;
+
+            let shortcut_result = if unsafe_session {
+                Err("Wayland global emergency shortcuts are not supported. Sign in to an X11 session to run the clicker.".to_string())
+            } else {
+                app.handle().plugin(
+                    tauri_plugin_global_shortcut::Builder::new()
+                        .with_handler(|app, _, event| {
+                            if event.state == ShortcutState::Pressed { stop(app); }
+                        })
+                        .build(),
+                ).map_err(|e| e.to_string()).and_then(|()| {
+                    app.global_shortcut().register(SHORTCUT).map_err(|e| e.to_string())
+                })
+            };
+            if let Err(e) = shortcut_result {
                 app.state::<AppState>()
                     .0
                     .lock()
                     .unwrap()
                     .status
-                    .shortcut_error = Some(e.to_string());
+                    .shortcut_error = Some(e);
             }
             Ok(())
         })
@@ -377,5 +465,48 @@ mod run_tests {
         let worker = std::thread::spawn(move || sleep_interruptibly(&signal, 60_000));
         cancel.store(true, Ordering::Release);
         assert!(!worker.join().unwrap());
+    }
+
+    #[test]
+    fn older_update_check_cannot_replace_newer_result() {
+        let mut pending = UpdateSlot::<u8>::default();
+        let older = pending.begin_check();
+        let newer = pending.begin_check();
+        assert!(pending.finish_check(newer, Some(("2.0".into(), 2))));
+        assert!(!pending.finish_check(older, Some(("1.5".into(), 1))));
+        assert_eq!(pending.take_approved("2.0").unwrap(), 2);
+    }
+
+    #[test]
+    fn installation_requires_exactly_the_approved_version() {
+        let mut pending = UpdateSlot::<u8>::default();
+        let check = pending.begin_check();
+        pending.finish_check(check, Some(("2.0".into(), 2)));
+        assert!(pending.take_approved("1.5").is_err());
+        assert_eq!(pending.take_approved("2.0").unwrap(), 2);
+    }
+
+    #[test]
+    fn position_mismatch_is_rejected_including_extreme_coordinates() {
+        assert!(position_matches(
+            Position { x: -1920, y: 300 },
+            (-1920, 301)
+        ));
+        assert!(!position_matches(Position { x: -1920, y: 300 }, (0, 300)));
+        assert!(!position_matches(
+            Position {
+                x: i32::MIN,
+                y: i32::MAX
+            },
+            (i32::MAX, i32::MIN)
+        ));
+    }
+
+    #[test]
+    fn wayland_session_is_not_mistaken_for_x11() {
+        assert!(is_wayland_session(Some("wayland"), None));
+        assert!(is_wayland_session(None, Some("wayland-0")));
+        assert!(!is_wayland_session(Some("x11"), Some("wayland-0")));
+        assert!(!is_wayland_session(None, None));
     }
 }
