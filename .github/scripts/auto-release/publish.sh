@@ -48,6 +48,5 @@ fi
 result=$(gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" --input "$RUNNER_TEMP/publish-release.json")
 [[ "$(jq -r .draft <<< "$result")" == false && "$(jq -r .tag_name <<< "$result")" == "$RELEASE_TAG" ]] || { echo 'GitHub did not confirm publication' >&2; exit 1; }
 jq -e --rawfile notes "$RUNNER_TEMP/complete-release-notes.md" '.body == $notes' <<< "$result" > /dev/null || { echo 'Published notes did not match the required safety notices' >&2; exit 1; }
-latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
-[[ "$latest" == "$RELEASE_TAG" ]] || { echo "Release published, but GitHub latest is $latest; investigate concurrent release" >&2; exit 1; }
+python3 .github/scripts/auto-release/verify-latest.py "$RELEASE_TAG"
 echo "Published $RELEASE_TAG from verified commit $RELEASE_SHA"

@@ -11,6 +11,9 @@ SCRIPT = Path(__file__).resolve().parents[1] / 'auto-release' / 'version.py'
 spec = importlib.util.spec_from_file_location('release_version', SCRIPT)
 version = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(version)
+latest_spec = importlib.util.spec_from_file_location('verify_latest', SCRIPT.parent / 'verify-latest.py')
+latest = importlib.util.module_from_spec(latest_spec)
+latest_spec.loader.exec_module(latest)
 
 
 class AutoReleaseVersionTest(unittest.TestCase):
@@ -57,6 +60,49 @@ class AutoReleaseVersionTest(unittest.TestCase):
             self.assertEqual(json.loads((root / 'package.json').read_text())['version'], '0.1.5')
 
 
+class LatestReleasePollingTest(unittest.TestCase):
+    class Clock:
+        elapsed = 0
+        def now(self):
+            return self.elapsed
+        def sleep(self, seconds):
+            self.elapsed += seconds
+
+    def test_stale_latest_is_retried_without_republishing(self):
+        clock = self.Clock()
+        replies = iter(['v0.1.4', 'v0.1.4', 'v0.1.7'])
+        calls = []
+        def fetch(timeout):
+            calls.append(timeout)
+            return next(replies)
+        latest.await_latest('v0.1.7', fetch, clock.now, clock.sleep, timeout=10)
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(clock.elapsed, 4)
+
+    def test_transient_api_failure_is_retried(self):
+        clock = self.Clock()
+        calls = []
+        def fetch(_timeout):
+            calls.append(1)
+            if len(calls) == 1:
+                raise subprocess.CalledProcessError(1, 'gh')
+            return 'v0.1.7'
+        latest.await_latest('v0.1.7', fetch, clock.now, clock.sleep, timeout=10)
+        self.assertEqual(len(calls), 2)
+
+    def test_newer_release_stops_polling(self):
+        clock = self.Clock()
+        with self.assertRaisesRegex(RuntimeError, 'newer release v0.1.8'):
+            latest.await_latest('v0.1.7', lambda _: 'v0.1.8', clock.now, clock.sleep, timeout=10)
+        self.assertEqual(clock.elapsed, 0)
+
+    def test_stale_latest_times_out_with_published_state_explicit(self):
+        clock = self.Clock()
+        with self.assertRaisesRegex(RuntimeError, 'already published.*last observed: v0.1.4'):
+            latest.await_latest('v0.1.7', lambda _: 'v0.1.4', clock.now, clock.sleep, timeout=5)
+        self.assertEqual(clock.elapsed, 5)
+
+
 class PrepareGitIntegrationTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -78,6 +124,7 @@ class PrepareGitIntegrationTest(unittest.TestCase):
         shutil.copy(SCRIPT.parent / 'prepare.sh', target / 'prepare.sh')
         shutil.copy(SCRIPT.parent / 'reserve.sh', target / 'reserve.sh')
         shutil.copy(SCRIPT.parent / 'publish.sh', target / 'publish.sh')
+        shutil.copy(SCRIPT.parent / 'verify-latest.py', target / 'verify-latest.py')
         shutil.copy(SCRIPT.parent / 'guard-upload.sh', target / 'guard-upload.sh')
         shutil.copy(SCRIPT.parent / 'release-notes.md', target / 'release-notes.md')
         (self.repo / 'package.json').write_text('{"version":"0.1.5"}')
