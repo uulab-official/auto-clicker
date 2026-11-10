@@ -121,7 +121,15 @@ try {
   function Invoke-Button([string]$name, [int]$index = 0) {
     $buttons = @(Find-Buttons $name)
     if ($buttons.Count -le $index) { throw "Enabled button '$name' index $index unavailable; found $($buttons.Count)" }
-    $buttons[$index].GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+    $button = $buttons[$index]
+    $pattern = $null
+    if ($button.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pattern)) {
+      $pattern.Invoke()
+    } elseif ($button.TryGetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern, [ref]$pattern)) {
+      $pattern.Toggle()
+    } else {
+      throw "Button '$name' supports neither Invoke nor Toggle"
+    }
   }
   # Configure two positions in the public UI and check two complete cycles in
   # the target's mouse event log. All input remains inside this disposable VM.
