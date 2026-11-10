@@ -72,9 +72,19 @@ case "path":
     guard let app = NSRunningApplication(processIdentifier: pid) else { exit(1) }
     _ = app.activate(options: [])
     Thread.sleep(forTimeInterval: 1)
+    key(55, true, [.maskCommand]); key(56, true, [.maskCommand, .maskShift])
     tap(5, [.maskCommand, .maskShift]) // Command-Shift-G
+    key(56, false, [.maskCommand]); key(55, false)
     Thread.sleep(forTimeInterval: 0.8)
-    typeText(args[3]); Thread.sleep(forTimeInterval: 0.5); tap(36) // Return
+    typeText(args[3]); Thread.sleep(forTimeInterval: 0.5)
+    print("Native panel after entering path:")
+    _ = visit(root, 0) { item in
+        let role = text(item, kAXRoleAttribute as CFString)
+        let title = text(item, kAXTitleAttribute as CFString), desc = text(item, kAXDescriptionAttribute as CFString), value = text(item, kAXValueAttribute as CFString)
+        if role == "AXSheet" || (role == "AXTextField" && value.contains("/")) || (role == "AXButton" && ["Go", "Open", "Save", "Cancel"].contains(title)) { print("\(role): \(title) | \(desc) | \(value)") }
+        return false
+    }
+    tap(36) // Return
     Thread.sleep(forTimeInterval: 1.5); tap(36) // Open or Save
 case "cancel":
     guard let app = NSRunningApplication(processIdentifier: pid) else { exit(1) }
