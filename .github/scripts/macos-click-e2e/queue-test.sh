@@ -29,15 +29,17 @@ done
 if ! grep -q 'queue-test: prepared shortcut id=' "$work/app.log"; then cat "$work/app.log"; echo 'Test library did not initialize in the app process' >&2; exit 1; fi
 read -r label x y < "$work/events"
 [[ "$label" == point ]] || { echo 'Target did not start' >&2; exit 1; }
+"$work/control" fast "$app_pid"
 "$work/control" move "$x" "$y"
 "$work/control" start "$app_pid"
 count=0
 for _ in $(seq 1 20); do
   count=$(grep -c '^click ' "$work/events" || true)
-  (( count >= 2 )) && break
+  (( count >= 20 )) && break
   sleep 1
 done
-(( count >= 2 )) || { cat "$work/app.log" "$work/events"; echo 'App failed to click test target' >&2; exit 1; }
+(( count >= 20 )) || { cat "$work/app.log" "$work/events"; echo 'App failed to click target at configured fast interval' >&2; exit 1; }
+echo "Target received $count clicks at 10 ms interval before stop"
 touch "$work/signal"
 for _ in $(seq 1 30); do grep -q 'queue-test: posted in-process Carbon hotkey event status=0/0/0' "$work/app.log" && break; sleep 0.2; done
 grep -q 'queue-test: posted in-process Carbon hotkey event status=0/0/0' "$work/app.log" || { cat "$work/app.log"; echo 'In-process Carbon event was not posted successfully' >&2; exit 1; }

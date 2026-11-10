@@ -43,7 +43,7 @@ if args[1] == "stop" || args[1] == "hotkey-control" {
     key(56, false, [.maskControl]); key(59, false, [])
     exit(0)
 }
-guard ["start", "dump", "button"].contains(args[1]), args.count >= 3, let pid = Int32(args[2]) else { exit(2) }
+guard ["start", "dump", "button", "fast"].contains(args[1]), args.count >= 3, let pid = Int32(args[2]) else { exit(2) }
 if args[1] == "button" && (args.count != 5 || Int(args[4]) == nil) { exit(2) }
 let labels = args[1] == "button" ? Set([args[3]]) : Set(["Start clicking", "클릭 시작", "クリックを開始"])
 let wanted = args[1] == "button" ? (Int(args[4]) ?? 0) : 0
@@ -52,6 +52,25 @@ let root = AXUIElementCreateApplication(pid)
 func attr(_ item: AXUIElement, _ name: CFString) -> CFTypeRef? {
     var value: CFTypeRef?
     return AXUIElementCopyAttributeValue(item, name, &value) == .success ? value : nil
+}
+func setFast(_ item: AXUIElement, _ depth: Int) -> Bool {
+    if depth > 45 { return false }
+    let role = (attr(item, kAXRoleAttribute as CFString) as? String) ?? ""
+    let title = (attr(item, kAXTitleAttribute as CFString) as? String) ?? ""
+    if role == "AXTextField" && title == "Interval ms" {
+        return AXUIElementSetAttributeValue(item, kAXValueAttribute as CFString, "10" as CFString) == .success
+    }
+    if let children = attr(item, kAXChildrenAttribute as CFString) as? [AXUIElement] {
+        for child in children where setFast(child, depth + 1) { return true }
+    }
+    return false
+}
+if args[1] == "fast" {
+    for _ in 0..<60 {
+        if setFast(root, 0) { print("Set target app interval to 10 ms"); exit(0) }
+        Thread.sleep(forTimeInterval: 1)
+    }
+    fputs("Could not set interval to 10 ms\n", stderr); exit(1)
 }
 func press(_ item: AXUIElement, _ depth: Int) -> Bool {
     if depth > 45 { return false }
