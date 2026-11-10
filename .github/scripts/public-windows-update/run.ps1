@@ -5,27 +5,53 @@ Add-Type -AssemblyName UIAutomationTypes
 $tmp = Join-Path $env:RUNNER_TEMP 'public-auto-clicker-update'
 New-Item -Type Directory -Force $tmp | Out-Null
 $target = $env:EXPECTED_UPDATE_VERSION
+$baseline = $env:BASELINE_VERSION
 $probe = $env:PROBE_ONLY -eq 'true'
-if ($target -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid expected version' }
+if ($env:GITHUB_ACTIONS -ne 'true' -or $env:CI -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw 'Requires a disposable GitHub-hosted runner' }
+$versionPattern = '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+if ($target -notmatch $versionPattern -or $baseline -notmatch $versionPattern) { throw 'Versions must be stable MAJOR.MINOR.PATCH' }
+try { $targetNumber = [version]$target; $baselineNumber = [version]$baseline } catch { throw 'Version components are out of range' }
+if ($targetNumber -le $baselineNumber) { throw 'Target version must be newer than baseline' }
+if (-not $env:GH_TOKEN) { throw 'GitHub token is required for release metadata' }
+$headers = @{ 'Accept' = 'application/vnd.github+json'; 'Authorization' = "Bearer $($env:GH_TOKEN)"; 'X-GitHub-Api-Version' = '2022-11-28'; 'User-Agent' = 'auto-clicker-release-verification' }
+function Get-PublicMsi([string]$version) {
+  $release = Invoke-RestMethod "https://api.github.com/repos/uulab-official/auto-clicker/releases/tags/v$version" -Headers $headers
+  if ($release.draft -or $release.prerelease -or $release.tag_name -ne "v$version") { throw "Release v$version is not the requested public stable release" }
+  $name = "Auto.Clicker_${version}_x64_en-US.msi"
+  $assetsFound = @($release.assets | Where-Object { $_.name -ceq $name })
+  if ($assetsFound.Count -ne 1) { throw "Expected one $name asset; found $($assetsFound.Count)" }
+  $asset = $assetsFound[0]
+  if ($asset.browser_download_url -cne "https://github.com/uulab-official/auto-clicker/releases/download/v$version/$name" -or $asset.url -cnotmatch '^https://api\.github\.com/repos/uulab-official/auto-clicker/releases/assets/[0-9]+$' -or $asset.digest -cnotmatch '^sha256:[0-9a-f]{64}$') { throw "Invalid public release asset metadata for v$version" }
+  return $asset
+}
+function Download-VerifiedMsi($asset, [string]$destination) {
+  & curl.exe --fail --location --silent --show-error --retry 3 --retry-all-errors --output $destination $asset.browser_download_url
+  if ($LASTEXITCODE -ne 0) { throw "Download failed for $($asset.name)" }
+  if ((Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant() -cne $asset.digest.Substring(7)) { throw "SHA256 mismatch for $($asset.name)" }
+  Write-Host "Verified public release asset $($asset.name): $($asset.digest)"
+}
+$baselineAsset = Get-PublicMsi $baseline
 if (-not $probe) {
   $manifest = Invoke-RestMethod 'https://github.com/uulab-official/auto-clicker/releases/latest/download/latest.json'
   if ($manifest.version -ne $target) { throw "Public latest is $($manifest.version), expected $target" }
+  $targetAsset = Get-PublicMsi $target
+  $updateUrl = $manifest.platforms.'windows-x86_64'.url
+  if ($updateUrl -cne $targetAsset.url -and $updateUrl -cne $targetAsset.browser_download_url) { throw 'Updater manifest does not point to the target public MSI asset' }
 }
 $oldMsi = Join-Path $tmp 'old.msi'
-Invoke-WebRequest 'https://github.com/uulab-official/auto-clicker/releases/download/v0.1.1/Auto.Clicker_0.1.1_x64_en-US.msi' -OutFile $oldMsi
-if ((Get-FileHash $oldMsi -Algorithm SHA256).Hash -ne '12741B32513AF6649F3A25F14A79010DDC172E91FFDC1A8426268143A8550EF5') { throw 'Baseline MSI does not match the v0.1.1 release asset digest' }
+Download-VerifiedMsi $baselineAsset $oldMsi
 $p = Start-Process msiexec.exe -ArgumentList '/i',"`"$oldMsi`"",'/qn','/norestart' -Wait -PassThru
-if ($p.ExitCode -ne 0) { throw "v0.1.1 installation failed: $($p.ExitCode)" }
+if ($p.ExitCode -ne 0) { throw "v$baseline installation failed: $($p.ExitCode)" }
 $exe = Join-Path $env:ProgramFiles 'Auto Clicker\auto-clicker.exe'
 if (-not (Test-Path $exe)) { throw 'Installed application not found' }
 $oldVersion = (Get-Item $exe).VersionInfo.FileVersion
-if ($oldVersion -notmatch '^0\.1\.1(\.0)?$') { throw "Unexpected baseline file version: $oldVersion" }
+if ($oldVersion -notmatch ('^' + [regex]::Escape($baseline) + '(\.0)?$')) { throw "Unexpected baseline file version: $oldVersion" }
 Write-Host "Installed unmodified public application: $oldVersion"
 # Independently obtain the publicly advertised MSI to compare the installed
 # executable with its exact embedded payload after the app has updated itself.
 if (-not $probe) {
 $candidate = Join-Path $tmp 'public-update.msi'
-Invoke-WebRequest $manifest.platforms.'windows-x86_64'.url -Headers @{ Accept = 'application/octet-stream' } -OutFile $candidate
+Download-VerifiedMsi $targetAsset $candidate
 $magic = [BitConverter]::ToString([IO.File]::ReadAllBytes($candidate)[0..7])
 if ($magic -ne 'D0-CF-11-E0-A1-B1-1A-E1') { throw 'Public Windows updater payload is not an MSI' }
 $extract = Join-Path $tmp 'extracted'
@@ -62,7 +88,7 @@ do {
 } while (-not $button -and (Get-Date) -lt $deadline)
 if (-not $button) { Write-Host "Visible accessibility names: $($seen -join ' | ')"; throw "Public app did not present the expected update button (probe=$probe)" }
 if ($probe) {
-  Write-Host 'Public v0.1.1 update-check button is accessible via UI Automation; no update was started.'
+  Write-Host "Public v$baseline update-check button is accessible via UI Automation; no update was started."
   Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
   exit 0
 }
