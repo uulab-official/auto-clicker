@@ -21,6 +21,7 @@ type UpdateInfo = { version: string; current_version: string; notes: string | nu
 let updateInfo: UpdateInfo | null = null;
 let updateState: 'idle' | 'checking' | 'available' | 'current' | 'installing' | 'installed' | 'error' = 'idle';
 let updateError = '';
+let moreOpen = false;
 const app = document.querySelector<HTMLDivElement>('#app')!;
 const escape = (s: unknown) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const checked = (v: boolean) => v ? ' checked' : '';
@@ -30,14 +31,12 @@ function save() { try { localStorage.setItem(key, JSON.stringify(settings)); } c
 function options(selected: string, values: [string, string][]) { return values.map(([v, label]) => `<option value="${v}"${v === selected ? ' selected' : ''}>${label}</option>`).join(''); }
 function clickFields(step: Click, index: string) {
   const position = step.position;
-  return `<div class="field-grid">
-    <label>Mouse button<select data-index="${index}" data-field="button">${options(step.button, [['left','Left'],['right','Right'],['middle','Middle']])}</select></label>
-    <label>Click type<select data-index="${index}" data-field="clicks">${options(String(step.clicks), [['1','Single click'],['2','Double click']])}</select></label>
-    <label>Interval <span class="unit">ms</span><input type="number" min="10" max="86400000" step="1" data-index="${index}" data-field="interval_ms" value="${escape(step.interval_ms)}" required></label>
-  </div>
-  <div class="location"><div><span class="label">Click location</span><p class="hint">${position ? `Fixed position · ${escape(position.x)}, ${escape(position.y)}` : 'Wherever the pointer is when the click happens'}</p></div>
-    <div class="location-actions"><button type="button" class="button secondary small" data-action="capture" data-index="${index}"${disabled(capturing)}>Pick position</button>${position ? `<button type="button" class="button text small" data-action="clear-position" data-index="${index}">Use pointer</button>` : ''}</div></div>
-  ${position ? `<div class="coordinate-grid"><label>X coordinate<input type="number" step="1" min="-2147483648" max="2147483647" data-index="${index}" data-field="x" value="${escape(position.x)}" required></label><label>Y coordinate<input type="number" step="1" min="-2147483648" max="2147483647" data-index="${index}" data-field="y" value="${escape(position.y)}" required></label></div>` : ''}`;
+  return `<label class="row"><span class="label">Mouse button</span><select data-index="${index}" data-field="button">${options(step.button, [['left','Left'],['right','Right'],['middle','Middle']])}</select></label>
+    <label class="row"><span class="label">Click type</span><select data-index="${index}" data-field="clicks">${options(String(step.clicks), [['1','Single click'],['2','Double click']])}</select></label>
+    <label class="row"><span class="label">Interval <span class="unit">ms</span></span><input type="number" min="10" max="86400000" step="1" data-index="${index}" data-field="interval_ms" value="${escape(step.interval_ms)}" required></label>
+    <div class="row location"><div><span class="label">Click location</span><p class="hint">${position ? `Fixed position · ${escape(position.x)}, ${escape(position.y)}` : 'Wherever the pointer is when the click happens'}</p></div>
+    <div class="row-actions">${position ? `<button type="button" class="button text" data-action="clear-position" data-index="${index}">Use pointer</button>` : ''}<button type="button" class="button" data-action="capture" data-index="${index}"${disabled(capturing)}>Pick position</button></div></div>
+    ${position ? `<div class="row coordinates"><label><span class="label">X coordinate</span><input type="number" step="1" min="-2147483648" max="2147483647" data-index="${index}" data-field="x" value="${escape(position.x)}" required></label><label><span class="label">Y coordinate</span><input type="number" step="1" min="-2147483648" max="2147483647" data-index="${index}" data-field="y" value="${escape(position.y)}" required></label></div>` : ''}`;
 }
 function render() {
   // Status and update events can arrive while a field is being edited. Replacing
@@ -51,30 +50,39 @@ function render() {
   const editingValue = active instanceof HTMLInputElement && active.type === 'number' ? active.value : null;
   const sequence = settings.mode === 'sequence';
   const shortcuts = Array.isArray(status.available_shortcuts) ? status.available_shortcuts.filter((value): value is string => typeof value === 'string' && value.length > 0) : [];
+  const locked = status.running || capturing || fileBusy;
+  const updateText = updateState === 'checking' ? 'Checking for updates…' : updateState === 'installing' ? 'Installing update…' : updateState === 'current' ? 'You have the latest version.' : updateState === 'installed' ? 'Update installed. Restart the app to use it.' : updateState === 'available' && updateInfo ? `Version ${escape(updateInfo.version)} is available.` : updateState === 'error' ? escape(updateError) : 'Updates are checked on startup. Installation requires your choice.';
   app.innerHTML = `<main class="shell">
-    <header class="topbar"><div class="brand"><span class="brand-icon" aria-hidden="true">✳</span><div><strong>Auto Clicker</strong><span class="brand-sub">A little automation, in your control.</span></div></div><div class="top-actions"><label class="language-label"><span class="sr-only">Language</span><select id="language" aria-label="Language"><option value="en"${language === 'en' ? ' selected' : ''}>English</option><option value="ko"${language === 'ko' ? ' selected' : ''}>한국어</option><option value="ja"${language === 'ja' ? ' selected' : ''}>日本語</option></select></label><span class="open-source">OPEN SOURCE</span></div></header>
-    <section class="intro"><div><p class="eyebrow">DESKTOP AUTOMATION</p><h1>Make every click count.</h1><p>Set up a click or build a sequence. Start when you're ready.</p></div><div class="status ${status.running ? 'active' : ''}" role="status"><span class="status-dot"></span>${status.running ? 'Running' : 'Ready'}</div></section>
-    ${status.shortcut_error ? `<div class="alert" role="alert"><strong>Emergency stop shortcut unavailable. Starting is disabled.</strong><p class="hint">${escape(status.shortcut_error)}</p></div>` : ''}
-    ${status.shortcut_warning ? `<div class="alert" role="alert"><strong>Some emergency shortcuts are unavailable. Use an available shortcut shown below.</strong><p class="hint">${escape(status.shortcut_warning)}</p></div>` : ''}
+    <header class="toolbar">
+      <div class="segmented" role="group" aria-label="Click mode"><button type="button" aria-pressed="${!sequence}" data-action="mode" data-mode="simple"${disabled(locked)}>Simple click</button><button type="button" aria-pressed="${sequence}" data-action="mode" data-mode="sequence"${disabled(locked)}>Sequence</button></div>
+      <select id="language" class="compact" aria-label="Language"><option value="en"${language === 'en' ? ' selected' : ''}>English</option><option value="ko"${language === 'ko' ? ' selected' : ''}>한국어</option><option value="ja"${language === 'ja' ? ' selected' : ''}>日本語</option></select>
+    </header>
+    <div class="content">
+    ${status.shortcut_error ? `<div class="alert" role="alert"><strong>Emergency stop shortcut unavailable. Starting is disabled.</strong><p>${escape(status.shortcut_error)}</p></div>` : ''}
+    ${status.shortcut_warning ? `<div class="alert" role="alert"><strong>Some emergency shortcuts are unavailable. Use an available shortcut shown below.</strong><p>${escape(status.shortcut_warning)}</p></div>` : ''}
     ${notice || status.error ? `<div class="alert" role="alert">${escape(notice || status.error)}</div>` : ''}
-    <div class="layout"><section class="workspace" aria-label="Click configuration">
-      <div class="tabs" role="group" aria-label="Click mode"><button type="button" aria-pressed="${!sequence}" data-action="mode" data-mode="simple"${disabled(status.running || capturing || fileBusy)}>Simple click</button><button type="button" aria-pressed="${sequence}" data-action="mode" data-mode="sequence"${disabled(status.running || capturing || fileBusy)}>Sequence</button></div>
-      <form id="config-form"><fieldset${disabled(status.running || capturing || fileBusy)}><legend class="sr-only">Click configuration</legend>
-      ${sequence ? `<div class="section-heading"><div><p class="eyebrow">YOUR SEQUENCE</p><h2>Steps</h2><p>Actions run from top to bottom, then repeat.</p></div><span class="count">${settings.steps.length} ${settings.steps.length === 1 ? 'STEP' : 'STEPS'}</span></div>
-      <div class="steps">${settings.steps.map((step, i) => `<article class="step"><div class="step-header"><div class="step-title"><span class="step-number">${String(i + 1).padStart(2, '0')}</span><strong>${step.kind === 'click' ? 'Click' : 'Wait'}</strong></div><div class="step-actions"><button type="button" aria-label="Move step ${i+1} up" data-action="up" data-index="${i}"${disabled(i === 0)}>↑</button><button type="button" aria-label="Move step ${i+1} down" data-action="down" data-index="${i}"${disabled(i === settings.steps.length - 1)}>↓</button><button type="button" aria-label="Duplicate step ${i+1}" data-action="duplicate" data-index="${i}"${disabled(settings.steps.length >= 1000)}>⧉</button><button type="button" aria-label="Remove step ${i+1}" data-action="remove" data-index="${i}">×</button></div></div>${step.kind === 'click' ? clickFields(step, String(i)) : `<label class="wait-field">Wait duration <span class="unit">ms</span><input type="number" min="1" max="86400000" step="1" data-index="${i}" data-field="duration_ms" value="${escape(step.duration_ms)}" required></label>`}</article>`).join('') || '<div class="empty">Your sequence is empty. Add a click or a wait to get started.</div>'}</div>
-      <div class="add-actions"><button type="button" class="button secondary" data-action="add-click"${disabled(settings.steps.length >= 1000)}>+ Add click</button><button type="button" class="button secondary" data-action="add-wait"${disabled(settings.steps.length >= 1000)}>+ Add wait</button></div>` : `<div class="section-heading"><div><p class="eyebrow">SINGLE ACTION</p><h2>Click settings</h2><p>Choose how and where to click.</p></div></div><div class="simple-fields">${clickFields(settings.simple, 'simple')}</div>`}
-      <div class="repeat-section"><div><span class="label">Repeat</span><p class="hint">Choose when the run should stop.</p></div><div class="repeat-controls"><label class="radio"><input type="radio" name="repeatMode" value="forever"${checked(settings.repeat === null)}> Until stopped</label><label class="radio"><input type="radio" name="repeatMode" value="count"${checked(settings.repeat !== null)}> <input aria-label="Number of repetitions" id="repeat-count" type="number" min="1" max="1000000" step="1" required value="${escape(settings.repeat ?? 1)}"${disabled(settings.repeat === null)}> times</label></div></div>
-      <div class="start-delay"><label for="start-delay">Start delay <span class="unit">seconds</span></label><input id="start-delay" type="number" min="0" max="60" step="1" required value="${escape(settings.startDelayMs / 1000)}"><p class="hint">Wait before the first click so you can switch windows. You can stop during the wait.</p></div>
-      <div class="backup-section"><span class="label">Settings backup</span><p class="hint">Export your settings or replace them with a saved backup.</p><div class="add-actions"><button type="button" class="button secondary" data-action="export-settings">Export settings</button><button type="button" class="button secondary" data-action="import-settings">Import settings</button></div></div>
-      </fieldset></form></section>
-      <aside class="control-panel"><div><p class="eyebrow">RUN CONTROL</p><h2>${status.running ? 'In progress' : 'Ready when you are'}</h2><p>${status.running ? `Completed cycles: ${status.completed_cycles}` : 'Review your settings, then start clicking.'}</p>${status.running && status.paused_over_app ? '<p class="hint" role="status">Clicking is paused while the pointer is over this window. Move it to where you want to click.</p>' : ''}</div>
+    <form id="config-form" aria-label="Click configuration"><fieldset${disabled(locked)}><legend class="sr-only">Click configuration</legend>
+      ${sequence ? `<div class="group-title"><span>Steps</span><span class="count">${settings.steps.length} ${settings.steps.length === 1 ? 'STEP' : 'STEPS'}</span></div>
+      ${settings.steps.map((step, i) => `<section class="group step"><div class="step-header"><span class="step-number">${i + 1}</span><strong>${step.kind === 'click' ? 'Click' : 'Wait'}</strong><div class="step-actions"><button type="button" aria-label="Move step ${i+1} up" data-action="up" data-index="${i}"${disabled(i === 0)}>↑</button><button type="button" aria-label="Move step ${i+1} down" data-action="down" data-index="${i}"${disabled(i === settings.steps.length - 1)}>↓</button><button type="button" aria-label="Duplicate step ${i+1}" data-action="duplicate" data-index="${i}"${disabled(settings.steps.length >= 1000)}>⧉</button><button type="button" aria-label="Remove step ${i+1}" data-action="remove" data-index="${i}">×</button></div></div>${step.kind === 'click' ? clickFields(step, String(i)) : `<label class="row"><span class="label">Wait duration <span class="unit">ms</span></span><input type="number" min="1" max="86400000" step="1" data-index="${i}" data-field="duration_ms" value="${escape(step.duration_ms)}" required></label>`}</section>`).join('') || '<div class="group empty">Your sequence is empty. Add a click or a wait to get started.</div>'}
+      <div class="add-actions"><button type="button" class="button" data-action="add-click"${disabled(settings.steps.length >= 1000)}>+ Add click</button><button type="button" class="button" data-action="add-wait"${disabled(settings.steps.length >= 1000)}>+ Add wait</button></div>` : `<section class="group">${clickFields(settings.simple, 'simple')}</section>`}
+      <section class="group">
+        <div class="row"><span class="label">Repeat</span><div class="repeat-controls"><label class="radio"><input type="radio" name="repeatMode" value="forever"${checked(settings.repeat === null)}> Until stopped</label><label class="radio"><input type="radio" name="repeatMode" value="count"${checked(settings.repeat !== null)}> <input aria-label="Number of repetitions" id="repeat-count" type="number" min="1" max="1000000" step="1" required value="${escape(settings.repeat ?? 1)}"${disabled(settings.repeat === null)}> times</label></div></div>
+        <div class="row"><div><label for="start-delay" class="label">Start delay <span class="unit">seconds</span></label><p class="hint">Wait before the first click so you can switch windows. You can stop during the wait.</p></div><input id="start-delay" type="number" min="0" max="60" step="1" required value="${escape(settings.startDelayMs / 1000)}"></div>
+      </section>
+      <details class="group more"${moreOpen ? ' open' : ''}><summary>More options</summary>
+        <div class="row"><span class="label">Settings backup</span><div class="row-actions"><button type="button" class="button" data-action="export-settings">Export settings</button><button type="button" class="button" data-action="import-settings">Import settings</button></div></div>
+        <div class="row"><div><span class="label">App updates</span><p class="hint">${updateText}</p></div><div class="row-actions">${updateState === 'available' ? `<button type="button" class="button" data-action="install-update"${disabled(status.running || fileBusy)}>Install update</button>` : `<button type="button" class="button" data-action="check-update"${disabled(fileBusy || updateState === 'checking' || updateState === 'installing' || updateState === 'installed')}>Check for updates</button>`}</div></div>
+        ${updateState === 'available' && updateInfo?.notes ? `<p class="update-notes">${escape(updateInfo.notes)}</p>` : ''}
+      </details>
+    </fieldset></form>
+    </div>
+    <footer class="runbar">
+      <div class="run-info">
+        <div class="status ${status.running ? 'active' : ''}" role="status"><span class="status-dot"></span><span>${status.running ? 'Running' : 'Ready'}</span>${status.running ? `<span class="cycles">Completed cycles: ${status.completed_cycles}</span>` : ''}</div>
+        ${status.running && status.paused_over_app ? '<p class="hint paused">Clicking is paused while the pointer is over this window. Move it to where you want to click.</p>' : `<div class="shortcut"><span>Global emergency stop</span>${shortcuts.length ? shortcuts.map(shortcut => `<kbd>${escape(shortcut)}</kbd>`).join('<span>or</span>') : `<span>${statusReady ? 'No shortcut available' : 'Checking shortcuts…'}</span>`}</div>${isMac && shortcuts.includes('Ctrl+Shift+F8') ? '<p class="hint">On some Mac keyboards, hold Fn or Globe with F8 to use it as a function key.</p>' : ''}`}
+      </div>
       <button type="button" class="button primary ${status.running ? 'stop' : ''}" data-action="toggle"${disabled(toggleDisabled(status, statusReady, capturing || fileBusy, updateState === 'installing'))}>${status.running ? '<span aria-hidden="true">■</span> Stop clicking' : '<span aria-hidden="true">▶</span> Start clicking'}</button>
-      <div class="shortcut"><span>Global emergency stop</span>${shortcuts.length ? shortcuts.map(shortcut => `<kbd>${escape(shortcut)}</kbd>`).join('<span>or</span>') : `<span>${statusReady ? 'No shortcut available' : 'Checking shortcuts…'}</span>`}</div>${isMac && shortcuts.includes('Ctrl+Shift+F8') ? '<p class="hint">On some Mac keyboards, hold Fn or Globe with F8 to use it as a function key.</p>' : ''}${shortcuts.length ? '<p class="safety">You can stop a run at any time with the shortcut. Check system permissions if clicking is unavailable.</p>' : ''}
-      <div class="updates"><span class="label">App updates</span>
-      <p class="hint">${updateState === 'checking' ? 'Checking for updates…' : updateState === 'installing' ? 'Installing update…' : updateState === 'current' ? 'You have the latest version.' : updateState === 'installed' ? 'Update installed. Restart the app to use it.' : updateState === 'available' && updateInfo ? `Version ${escape(updateInfo.version)} is available.` : updateState === 'error' ? escape(updateError) : 'Updates are checked on startup. Installation requires your choice.'}</p>
-      ${updateState === 'available' && updateInfo?.notes ? `<p class="update-notes">${escape(updateInfo.notes)}</p>` : ''}
-      ${updateState === 'available' ? `<button type="button" class="button secondary update-button" data-action="install-update"${disabled(status.running || fileBusy)}>Install update</button>` : `<button type="button" class="button secondary update-button" data-action="check-update"${disabled(fileBusy || updateState === 'checking' || updateState === 'installing' || updateState === 'installed')}>Check for updates</button>`}</div></aside></div>
-    <footer><span>Built for the way you work.</span><span>Settings stay on this device.</span></footer></main>`;
+    </footer></main>`;
   document.documentElement.lang = language;
   translateDom(app, language);
   if (selector) {
@@ -123,6 +131,16 @@ function changeInput(target: HTMLInputElement | HTMLSelectElement) {
     else if ((field === 'x' || field === 'y') && step.position) step.position[field] = Number(target.value);
   } else if (field === 'duration_ms') step.duration_ms = Number(target.value);
   save();
+}
+app.addEventListener('toggle', e => { if (e.target instanceof HTMLDetailsElement && e.target.classList.contains('more')) moreOpen = e.target.open; }, true);
+// Behave like a desktop app: no browser context menu, reload or find bar in release builds.
+const devServer = location.port === '1420';
+if (!devServer) {
+  document.addEventListener('contextmenu', e => { if (!(e.target instanceof HTMLInputElement)) e.preventDefault(); });
+  document.addEventListener('keydown', e => {
+    const k = e.key.toLowerCase();
+    if (k === 'f5' || k === 'f3' || k === 'f7' || ((e.ctrlKey || e.metaKey) && (k === 'r' || k === 'p' || k === 'f' || k === 'g' || k === 'u' || k === 'j'))) e.preventDefault();
+  });
 }
 app.addEventListener('input', e => { const t = e.target; if (t instanceof HTMLInputElement && t.type === 'number') changeInput(t); });
 app.addEventListener('change', e => { const t = e.target; if (t instanceof HTMLSelectElement && t.id === 'language') { if (t.value === 'en' || t.value === 'ko' || t.value === 'ja') { language = t.value; try { localStorage.setItem('open-clicker-language', language); } catch { /* selection lasts for this session */ } render(); } return; } if (t instanceof HTMLSelectElement || (t instanceof HTMLInputElement && t.type === 'radio')) changeInput(t); });
