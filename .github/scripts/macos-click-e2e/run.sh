@@ -51,14 +51,30 @@ for _ in $(seq 1 20); do
   sleep 1
 done
 (( count >= 2 )) || { "$work/control" dump "$app_pid" || true; cat "$work/app.log" "$work/target.log" "$work/events"; echo "Expected at least two target clicks, received $count" >&2; exit 1; }
+"$work/control" monitor >"$work/keyboard.log" 2>&1 & monitor_pid=$!
+for _ in $(seq 1 30); do grep -q 'Keyboard monitor ready' "$work/keyboard.log" && break; kill -0 "$monitor_pid" 2>/dev/null || break; sleep 0.1; done
 "$work/control" stop
+sleep 1
+kill "$monitor_pid" 2>/dev/null || true
+cat "$work/keyboard.log"
 sleep 2
 stopped=$(grep -c '^click ' "$work/events" || true)
 sleep 3
 after=$(grep -c '^click ' "$work/events" || true)
-[[ "$stopped" == "$after" ]] || { echo "Clicks continued after stop: $stopped -> $after" >&2; exit 1; }
+emergency_failed=0
+if [[ "$stopped" != "$after" ]]; then
+  echo "Clicks continued after synthetic emergency shortcut: $stopped -> $after" >&2
+  emergency_failed=1
+  "$work/control" button "$app_pid" 'Stop clicking' 0
+  sleep 2
+  stopped=$(grep -c '^click ' "$work/events" || true)
+  sleep 3
+  after=$(grep -c '^click ' "$work/events" || true)
+  [[ "$stopped" == "$after" ]] || { echo 'Clicks continued after UI stop' >&2; exit 1; }
+  echo 'UI Stop clicking halted the actual click run'
+fi
 kill -0 "$app_pid" || { cat "$work/app.log"; exit 1; }
-echo "Public 0.1.3 produced $count actual target clicks and stopped after Ctrl+Shift+F8"
+[[ "$emergency_failed" != 0 ]] || echo "Public 0.1.3 produced $count actual target clicks and stopped after Ctrl+Shift+F8"
 
 # Configure two positions through the real UI, then check the target's recorded
 # input order for two complete cycles. Position capture uses the actual cursor.
@@ -82,10 +98,11 @@ head -n "$((before + 5))" "$work/events" | tail -4 | awk '
   /^click / { expected = (NR % 2 == 1 ? 40 : 120); if ($2 < expected - 2 || $2 > expected + 2) exit 1; next }
   { exit 1 }
 ' || { cat "$work/events"; echo 'Sequence click order differed from expected positions' >&2; exit 1; }
-"$work/control" stop
+if [[ "$emergency_failed" == 0 ]]; then "$work/control" stop; else "$work/control" button "$app_pid" 'Stop clicking' 0; fi
 sleep 2
 stopped=$(grep -c '^click ' "$work/events" || true)
 sleep 3
 after=$(grep -c '^click ' "$work/events" || true)
 [[ "$stopped" == "$after" ]] || { echo "Sequence continued after stop: $stopped -> $after" >&2; exit 1; }
 echo 'Public 0.1.3 delivered two repetitions of the two-position sequence in order and stopped'
+[[ "$emergency_failed" == 0 ]] || { echo 'Emergency shortcut did not stop the clicker in this runner' >&2; exit 1; }

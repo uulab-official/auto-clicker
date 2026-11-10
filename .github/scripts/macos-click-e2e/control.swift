@@ -6,6 +6,23 @@ guard AXIsProcessTrusted() else {
 }
 let args = CommandLine.arguments
 guard args.count >= 2 else { exit(2) }
+if args[1] == "monitor" {
+    let mask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue) | (1 << CGEventType.flagsChanged.rawValue)
+    let callback: CGEventTapCallBack = { _, type, event, _ in
+        print("keyboard event type=\(type.rawValue) code=\(event.getIntegerValueField(.keyboardEventKeycode)) flags=\(event.flags.rawValue)")
+        fflush(stdout)
+        return Unmanaged.passUnretained(event)
+    }
+    guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .listenOnly, eventsOfInterest: CGEventMask(mask), callback: callback, userInfo: nil),
+          let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0) else {
+        fputs("Cannot observe keyboard event delivery on runner\n", stderr); exit(3)
+    }
+    CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .defaultMode)
+    CGEvent.tapEnable(tap: tap, enable: true)
+    print("Keyboard monitor ready"); fflush(stdout)
+    CFRunLoopRunInMode(.defaultMode, 10, false)
+    exit(0)
+}
 if args[1] == "move", args.count == 4, let x = Double(args[2]), let y = Double(args[3]) {
     let point = CGPoint(x: x, y: y)
     guard CGWarpMouseCursorPosition(point) == .success else { exit(1) }
