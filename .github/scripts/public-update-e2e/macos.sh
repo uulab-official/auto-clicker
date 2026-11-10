@@ -19,14 +19,22 @@ case "$(uname -m)" in
   *) echo 'Unsupported runner architecture' >&2; exit 1 ;;
 esac
 if [[ "${PUBLIC_UPDATE_PROBE_ONLY:-0}" != 1 ]]; then
-curl --fail --location --silent --show-error -o "$work/latest.json" 'https://github.com/uulab-official/auto-clicker/releases/latest/download/latest.json'
+echo 'Fetching public latest update manifest'
+if ! curl --fail --location --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 -D "$work/manifest.headers" -o "$work/latest.json" 'https://github.com/uulab-official/auto-clicker/releases/latest/download/latest.json'; then
+  grep -iE '^(HTTP/|x-ratelimit-|retry-after:)' "$work/manifest.headers" || true
+  echo 'Could not retrieve public update manifest' >&2; exit 1
+fi
 python3 - "$work/latest.json" "$work/target.url" "$platform" "$expected_version" <<'PY'
 import json, pathlib, sys
 m=json.loads(pathlib.Path(sys.argv[1]).read_text())
 if m['version'] != sys.argv[4]: raise SystemExit('Latest public release does not match expected version')
 pathlib.Path(sys.argv[2]).write_text(m['platforms'][sys.argv[3]]['url'])
 PY
-curl --fail --location --silent --show-error -H 'Accept: application/octet-stream' -H 'User-Agent: auto-clicker-release-verification' -o "$work/update.tar.gz" "$(cat "$work/target.url")"
+echo 'Fetching public macOS update payload for independent SHA-256 check'
+if ! curl --fail --location --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 -D "$work/payload.headers" -H 'Accept: application/octet-stream' -H 'User-Agent: auto-clicker-release-verification' -o "$work/update.tar.gz" "$(cat "$work/target.url")"; then
+  grep -iE '^(HTTP/|x-ratelimit-|retry-after:)' "$work/payload.headers" || true
+  echo 'Could not retrieve public update payload' >&2; exit 1
+fi
 tar -xzf "$work/update.tar.gz" -C "$work/expected"
 expected_app="$(find "$work/expected" -maxdepth 1 -type d -name '*.app' -print -quit)"
 [[ -n "$expected_app" ]] || { echo 'Published update app missing from archive' >&2; exit 1; }
