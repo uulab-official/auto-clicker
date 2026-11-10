@@ -135,7 +135,11 @@ def choose_path(title, path):
     # GTK's native chooser exposes the location entry with Ctrl+L.
     subprocess.run(['xdotool', 'key', '--clearmodifiers', 'ctrl+l'], check=True)
     time.sleep(.25)
+    # The save chooser may prefill a filename. Replace the complete location
+    # entry instead of appending to whatever GTK selected by default.
+    subprocess.run(['xdotool', 'key', '--clearmodifiers', 'ctrl+a'], check=True)
     subprocess.run(['xdotool', 'type', '--clearmodifiers', '--delay', '1', str(path)], check=True)
+    time.sleep(.25)
     subprocess.run(['xdotool', 'key', 'Return'], check=True)
 
 def export(pid, path):
