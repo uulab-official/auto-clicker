@@ -10,7 +10,7 @@ pid = int(sys.argv[1])
 events = pathlib.Path(sys.argv[2])
 
 def walk(node, depth=0):
-    if depth > 40:
+    if node is None or depth > 40:
         return
     yield node
     try:
@@ -30,7 +30,7 @@ def find(predicate, timeout=30):
                     try:
                         if predicate(node):
                             return node
-                    except (LookupError, RuntimeError, NotImplementedError):
+                    except (AttributeError, LookupError, RuntimeError, NotImplementedError):
                         continue
             except (LookupError, RuntimeError):
                 continue
