@@ -40,7 +40,7 @@ for _ in $(seq 1 20); do
   (( count >= 2 )) && break
   sleep 1
 done
-(( count >= 2 )) || { cat "$work/app.log" "$work/target.log" "$work/events"; echo "Expected at least two target clicks, received $count" >&2; exit 1; }
+(( count >= 2 )) || { "$work/control" dump "$app_pid" || true; cat "$work/app.log" "$work/target.log" "$work/events"; echo "Expected at least two target clicks, received $count" >&2; exit 1; }
 "$work/control" stop
 sleep 2
 stopped=$(grep -c '^click ' "$work/events" || true)

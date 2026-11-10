@@ -12,14 +12,20 @@ if args[1] == "move", args.count == 4, let x = Double(args[2]), let y = Double(a
     exit(0)
 }
 if args[1] == "stop" {
-    // F8 is keycode 100. The shortcut is delivered only inside the disposable VM.
-    guard let down = CGEvent(keyboardEventSource: nil, virtualKey: 100, keyDown: true),
-          let up = CGEvent(keyboardEventSource: nil, virtualKey: 100, keyDown: false) else { exit(1) }
-    down.flags = [.maskControl, .maskShift]; up.flags = [.maskControl, .maskShift]
-    down.post(tap: .cghidEventTap); up.post(tap: .cghidEventTap)
+    // Send modifier key transitions as well as the F8 key. Flags on F8 alone
+    // do not establish modifier state for every global shortcut listener.
+    func key(_ code: CGKeyCode, _ down: Bool, _ flags: CGEventFlags) {
+        guard let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down) else { exit(1) }
+        event.flags = flags
+        event.post(tap: .cghidEventTap)
+        Thread.sleep(forTimeInterval: 0.08)
+    }
+    key(59, true, [.maskControl]); key(56, true, [.maskControl, .maskShift])
+    key(100, true, [.maskControl, .maskShift]); key(100, false, [.maskControl, .maskShift])
+    key(56, false, [.maskControl]); key(59, false, [])
     exit(0)
 }
-guard args[1] == "start", args.count == 3, let pid = Int32(args[2]) else { exit(2) }
+guard ["start", "dump"].contains(args[1]), args.count == 3, let pid = Int32(args[2]) else { exit(2) }
 let root = AXUIElementCreateApplication(pid)
 func attr(_ item: AXUIElement, _ name: CFString) -> CFTypeRef? {
     var value: CFTypeRef?
@@ -39,6 +45,18 @@ func press(_ item: AXUIElement, _ depth: Int) -> Bool {
     }
     return false
 }
+func dump(_ item: AXUIElement, _ depth: Int) {
+    if depth > 45 { return }
+    let role = (attr(item, kAXRoleAttribute as CFString) as? String) ?? ""
+    let title = (attr(item, kAXTitleAttribute as CFString) as? String) ?? ""
+    let desc = (attr(item, kAXDescriptionAttribute as CFString) as? String) ?? ""
+    let value = (attr(item, kAXValueAttribute as CFString) as? String) ?? ""
+    if !title.isEmpty || !desc.isEmpty || !value.isEmpty { print("\(role): \(title) | \(desc) | \(value)") }
+    if let children = attr(item, kAXChildrenAttribute as CFString) as? [AXUIElement] {
+        for child in children { dump(child, depth + 1) }
+    }
+}
+if args[1] == "dump" { dump(root, 0); exit(0) }
 for _ in 0..<60 {
     if press(root, 0) { print("Pressed Start clicking in public app PID \(pid)"); exit(0) }
     Thread.sleep(forTimeInterval: 1)
