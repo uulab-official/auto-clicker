@@ -1,0 +1,26 @@
+name: macOS synthetic HIDSystem shortcut verification
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: macos-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shortcut: ['F8', 'Escape']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - run: npm run tauri build -- --no-bundle
+      - name: Verify synthetic HIDSystem and Carbon delivery
+        env:
+          AUTOCLICKER_TEST_SHORTCUT: ${{ matrix.shortcut }}
+        run: bash .github/scripts/macos-click-e2e/iokit-test.sh
