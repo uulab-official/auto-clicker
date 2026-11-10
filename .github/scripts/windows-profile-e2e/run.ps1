@@ -4,6 +4,13 @@ if ($env:GITHUB_ACTIONS -ne 'true' -or $env:CI -ne 'true' -or $env:RUNNER_ENVIRO
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 Add-Type -AssemblyName System.Windows.Forms
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public static class ProfileDialogWindow {
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
+}
+'@
 $work = Join-Path $env:RUNNER_TEMP 'auto-clicker-profile-e2e'
 New-Item -ItemType Directory -Force $work | Out-Null
 $exe = Join-Path $env:GITHUB_WORKSPACE 'src-tauri\target\release\auto-clicker.exe'
@@ -57,11 +64,13 @@ function Set-Delay([int]$seconds) {
 function Wait-Dialog([string]$title) {
   $deadline = (Get-Date).AddSeconds(30)
   do {
-    $root = [System.Windows.Automation.AutomationElement]::RootElement
-    $windows = $root.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition)
-    foreach ($window in $windows) {
-      try { if ($window.Current.Name -eq $title -and $window.Current.ProcessId -eq $app.Id) { return $window } } catch { }
-    }
+    try {
+      $root = [System.Windows.Automation.AutomationElement]::FromHandle($app.MainWindowHandle)
+      $windows = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+      foreach ($window in $windows) {
+        try { if ($window.Current.Name -eq $title -and $window.Current.ProcessId -eq $app.Id -and $window.Current.ControlType -eq [System.Windows.Automation.ControlType]::Window) { return $window } } catch { }
+      }
+    } catch { }
     Start-Sleep -Milliseconds 250
   } while ((Get-Date) -lt $deadline)
   Write-Host "Native dialog '$title' not found; desktop window diagnostics:"
@@ -77,26 +86,22 @@ function Wait-Dialog([string]$title) {
 }
 function Choose-File([string]$title, [string]$path, [string]$buttonName) {
   $dialog = Wait-Dialog $title
-  $nodes = $dialog.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
-  $fileName = $null; $confirm = $null
-  foreach ($node in $nodes) {
-    try {
-      $c = $node.Current
-      if ($c.ControlType -eq [System.Windows.Automation.ControlType]::Edit -and ($c.AutomationId -eq '1001' -or $c.Name -match '^File name:?$')) { $fileName = $node }
-      if ($c.ControlType -eq [System.Windows.Automation.ControlType]::Button -and $c.Name -eq $buttonName -and $c.IsEnabled) { $confirm = $node }
-    } catch { }
-  }
-  if (-not $fileName -or -not $confirm) { throw "Cannot locate filename input or $buttonName button in $title" }
-  $fileName.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue($path)
-  $confirm.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+  # IFileDialog exposes its nested text input as a Pane in this VM. Use the
+  # native File name accelerator and keyboard input on the isolated desktop.
+  $handle = [IntPtr]$dialog.Current.NativeWindowHandle
+  if ($handle -eq [IntPtr]::Zero -or -not [ProfileDialogWindow]::SetForegroundWindow($handle)) { throw "Cannot focus native dialog $title" }
+  $escaped = [regex]::Replace($path, '[+^%~(){}\[\]]', { param($m) '{' + $m.Value + '}' })
+  [System.Windows.Forms.SendKeys]::SendWait('%n')
+  [System.Windows.Forms.SendKeys]::SendWait('^a')
+  [System.Windows.Forms.SendKeys]::SendWait($escaped)
+  [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+  Write-Host "Entered file in $title and activated $buttonName"
 }
 function Cancel-Dialog([string]$title) {
   $dialog = Wait-Dialog $title
-  $buttons = $dialog.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
-  foreach ($button in $buttons) {
-    try { if ($button.Current.Name -eq 'Cancel' -and $button.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button) { $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke(); return } } catch { }
-  }
-  throw "Cannot find Cancel in $title"
+  $handle = [IntPtr]$dialog.Current.NativeWindowHandle
+  if ($handle -eq [IntPtr]::Zero -or -not [ProfileDialogWindow]::SetForegroundWindow($handle)) { throw "Cannot focus native dialog $title" }
+  [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
 }
 function Wait-Text([string]$text) { $null = Find-AppNode { param($n) $n.Current.Name -like "*$text*" } }
 function Export-Settings([string]$path) {
