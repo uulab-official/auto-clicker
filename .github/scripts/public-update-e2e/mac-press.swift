@@ -13,6 +13,8 @@ guard AXIsProcessTrusted() else {
 }
 let root = AXUIElementCreateApplication(pid)
 var seen = Set<String>()
+var openedMore = false
+let moreNames = Set(["More options", "추가 옵션", "その他のオプション"])
 func attribute(_ item: AXUIElement, _ name: CFString) -> CFTypeRef? {
     var result: CFTypeRef?
     return AXUIElementCopyAttributeValue(item, name, &result) == .success ? result : nil
@@ -22,6 +24,13 @@ func scan(_ item: AXUIElement, _ depth: Int) -> Bool {
     let role = (attribute(item, kAXRoleAttribute as CFString) as? String) ?? ""
     let title = (attribute(item, kAXTitleAttribute as CFString) as? String) ?? ""
     let description = (attribute(item, kAXDescriptionAttribute as CFString) as? String) ?? ""
+    if !probe && !openedMore && moreNames.contains(where: { title.hasSuffix($0) || description.hasSuffix($0) }) {
+        if AXUIElementPerformAction(item, kAXPressAction as CFString) == .success {
+            openedMore = true
+            print("Opened target application More options: \(title) \(description)")
+            return false
+        }
+    }
     if role == "AXButton" {
         seen.insert(title + " | " + description)
         if names.contains(title) || names.contains(description) {

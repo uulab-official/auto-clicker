@@ -67,6 +67,8 @@ $deadline = (Get-Date).AddMinutes(3)
 $button = $null
 $names = if ($probe) { @('Check for updates','업데이트 확인','アップデートを確認') } else { @('Install update','업데이트 설치','アップデートをインストール') }
 $seen = @()
+$openedMore = $false
+$moreNames = @('More options','추가 옵션','その他のオプション')
 do {
   Start-Sleep -Seconds 2
   $app.Refresh()
@@ -80,6 +82,16 @@ do {
     try {
       $name = $element.Current.Name
       if ($name) { $seen += $name }
+      if (-not $openedMore -and @($moreNames | Where-Object { $name.EndsWith($_) }).Count -gt 0 -and $element.Current.IsEnabled) {
+        $invoke = $null
+        $expand = $null
+        if ($element.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$invoke)) {
+          $invoke.Invoke(); $openedMore = $true
+        } elseif ($element.TryGetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern, [ref]$expand)) {
+          $expand.Expand(); $openedMore = $true
+        }
+        if ($openedMore) { Write-Host "Opened target application More options: $name"; break }
+      }
       if ($element.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and $name -in $names -and $element.Current.IsEnabled) {
         $button = $element; break
       }
