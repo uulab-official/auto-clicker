@@ -15,8 +15,12 @@ read -r label x y < "$work/events"
 "$work/control" finite "$app_pid"
 read -r appx appy < <("$work/control" app-point "$app_pid")
 "$work/control" move "$appx" "$appy"
+"$work/control" diagnose "$app_pid"
 "$work/control" start "$app_pid"
+"$work/control" diagnose "$app_pid"
 sleep 6
+"$work/control" diagnose "$app_pid"
+cat "$work/events"
 "$work/control" dump "$app_pid" > "$work/paused"
 cat "$work/paused"
 grep -qi 'paused while the pointer' "$work/paused" || { echo 'No paused state' >&2; exit 1; }

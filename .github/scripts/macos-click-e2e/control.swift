@@ -24,6 +24,17 @@ if args[1] == "monitor" {
     CFRunLoopRunInMode(.defaultMode, 10, false)
     exit(0)
 }
+if args[1] == "diagnose", args.count == 3, let pid = Int32(args[2]) {
+    let active = NSRunningApplication(processIdentifier: pid)?.isActive ?? false
+    let mouse = CGEvent(source: nil)?.location ?? .zero
+    print("DIAGNOSTIC app_active=\(active) mouse=\(mouse)")
+    if let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] {
+        for window in windows.prefix(15) {
+            print("DIAGNOSTIC window pid=\(window[kCGWindowOwnerPID as String] ?? -1) bounds=\(window[kCGWindowBounds as String] ?? [:]) name=\(window[kCGWindowOwnerName as String] ?? "")")
+        }
+    }
+    exit(0)
+}
 if args[1] == "move", args.count == 4, let x = Double(args[2]), let y = Double(args[3]) {
     let point = CGPoint(x: x, y: y)
     guard CGWarpMouseCursorPosition(point) == .success else { exit(1) }
