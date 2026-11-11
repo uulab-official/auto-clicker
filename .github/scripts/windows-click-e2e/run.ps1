@@ -156,7 +156,7 @@ try {
   Invoke-Button 'Sequence'
   # UIA Invoke may return before the WebView handles the tab click. Wait for
   # the sequence view, otherwise the next action can capture the simple step.
-  Wait-AppText 'Actions run from top to bottom, then repeat.'
+  Wait-AppText '+ Add click'
   Invoke-Button 'Pick position'
   [TestInput]::SetCursorPos(($rect.Left + 70),($rect.Top + 100)) | Out-Null
   Wait-AppText "Position captured: $(($rect.Left + 70)), $(($rect.Top + 100))."

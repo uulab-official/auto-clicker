@@ -1,4 +1,4 @@
-name: Windows public v0.1.4 functionality
+name: Windows public v0.1.11 functionality
 on:
   workflow_dispatch:
 permissions:
@@ -9,7 +9,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-      - name: Install the verified public v0.1.4 MSI
+      - name: Install the verified public v0.1.11 MSI
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: .github/scripts/windows-public-014/install.ps1
       - name: Exercise actual backup and restore dialogs
@@ -20,7 +22,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-      - name: Install the verified public v0.1.4 MSI
+      - name: Install the verified public v0.1.11 MSI
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: .github/scripts/windows-public-014/install.ps1
       - name: Exercise clicks and emergency stop
