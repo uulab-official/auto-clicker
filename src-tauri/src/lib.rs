@@ -256,6 +256,79 @@ fn windows_target_is_app(window: &tauri::WebviewWindow, x: f64, y: f64) -> Optio
         Some(hit_root == app_root)
     }
 }
+
+// On macOS, Accessibility performs the window-server hit test at the same
+// global coordinates used by Quartz mouse events. Failure is not evidence
+// that another app will receive the click: callers retain the safe geometric
+// fallback (including when our window is not focused).
+#[cfg(target_os = "macos")]
+fn macos_target_is_app(target: Option<Position>) -> Option<bool> {
+    use std::ffi::c_void;
+
+    #[repr(C)]
+    struct Point {
+        x: f64,
+        y: f64,
+    }
+    #[link(name = "ApplicationServices", kind = "framework")]
+    extern "C" {
+        fn AXUIElementCreateSystemWide() -> *const c_void;
+        fn AXUIElementCopyElementAtPosition(
+            application: *const c_void,
+            x: f32,
+            y: f32,
+            element: *mut *const c_void,
+        ) -> i32;
+        fn AXUIElementGetPid(element: *const c_void, pid: *mut i32) -> i32;
+    }
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGEventCreate(source: *const c_void) -> *const c_void;
+        fn CGEventGetLocation(event: *const c_void) -> Point;
+    }
+    #[link(name = "CoreFoundation", kind = "framework")]
+    extern "C" {
+        fn CFRelease(object: *const c_void);
+    }
+
+    let point = match target {
+        Some(pos) => Point {
+            x: f64::from(pos.x),
+            y: f64::from(pos.y),
+        },
+        None => {
+            let event = unsafe { CGEventCreate(std::ptr::null()) };
+            if event.is_null() {
+                return None;
+            }
+            let position = unsafe { CGEventGetLocation(event) };
+            unsafe { CFRelease(event) };
+            position
+        }
+    };
+    if !point.x.is_finite() || !point.y.is_finite() {
+        return None;
+    }
+    let system = unsafe { AXUIElementCreateSystemWide() };
+    if system.is_null() {
+        return None;
+    }
+    let mut element = std::ptr::null();
+    let result = unsafe {
+        AXUIElementCopyElementAtPosition(system, point.x as f32, point.y as f32, &mut element)
+    };
+    unsafe { CFRelease(system) };
+    if result != 0 || element.is_null() {
+        if !element.is_null() {
+            unsafe { CFRelease(element) };
+        }
+        return None;
+    }
+    let mut pid = 0;
+    let result = unsafe { AXUIElementGetPid(element, &mut pid) };
+    unsafe { CFRelease(element) };
+    (result == 0 && pid > 0).then_some(pid as u32 == std::process::id())
+}
 // A click landing on this app would press its own controls (for example the
 // Stop button that replaced Start under the pointer), ending the run at once.
 fn target_over_app(app: &tauri::AppHandle, target: Option<Position>) -> bool {
@@ -269,14 +342,15 @@ fn target_over_app(app: &tauri::AppHandle, target: Option<Position>) -> bool {
         Some(pos) => Some((f64::from(pos.x), f64::from(pos.y))),
         None => window.cursor_position().ok().map(|pos| (pos.x, pos.y)),
     };
+    #[cfg(target_os = "macos")]
+    if let Some(is_app) = macos_target_is_app(target) {
+        return is_app;
+    }
     #[cfg(windows)]
     if let Some((x, y)) = point {
         if let Some(is_app) = windows_target_is_app(&window, x, y) {
             return is_app;
         }
-    }
-    if !window.is_focused().unwrap_or(false) {
-        return false;
     }
     match (point, window.outer_position(), window.outer_size()) {
         (Some((x, y)), Ok(pos), Ok(size)) => {

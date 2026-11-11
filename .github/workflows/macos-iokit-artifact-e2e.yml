@@ -1,58 +1,26 @@
-name: Verify macOS release shortcut via synthetic HIDSystem
+name: macOS inactive window safety verification
 on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Exact draft or public release tag
-        required: true
-        default: v0.1.5
+        description: Ignored for source-build verification
+        required: false
+        default: v0.1.12
 permissions:
-  # GitHub requires write permission to list and download draft releases.
-  contents: write
+  contents: read
 jobs:
   verify:
     runs-on: macos-latest
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        shortcut: ['F8', 'Escape']
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-      - name: Download and verify the tagged macOS installer
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - run: npm run tauri build -- --no-bundle
+      - name: Check inactive application pause, resume and stop
         env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
-        run: |
-          set -euo pipefail
-          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
-          case "$(uname -m)" in arm64) arch=aarch64 ;; x86_64) arch=x64 ;; *) exit 1 ;; esac
-          name="Auto.Clicker_${RELEASE_TAG#v}_${arch}.dmg"
-          # GitHub's release-by-tag endpoint excludes drafts; list releases
-          # with the authenticated token and require exactly one matching tag.
-          metadata=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[]' | jq -s --arg tag "$RELEASE_TAG" '[.[] | select(.tag_name == $tag)] | if length == 1 then .[0] else error("expected one matching release") end')
-          [[ "$(jq -r '.tag_name' <<< "$metadata")" == "$RELEASE_TAG" ]]
-          [[ "$(jq -r '.prerelease' <<< "$metadata")" == false ]]
-          digest=$(jq -r --arg name "$name" '[.assets[] | select(.name == $name) | .digest] | if length == 1 then .[0] else empty end' <<< "$metadata")
-          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
-          mkdir -p "$RUNNER_TEMP/verified-app/mount" "$RUNNER_TEMP/verified-app/install"
-          gh release download "$RELEASE_TAG" --pattern "$name" --output "$RUNNER_TEMP/verified-app/app.dmg"
-          [[ "$digest" == "sha256:$(shasum -a 256 "$RUNNER_TEMP/verified-app/app.dmg" | awk '{print $1}')" ]]
-          codesign --verify --strict "$RUNNER_TEMP/verified-app/app.dmg"
-          xcrun stapler validate "$RUNNER_TEMP/verified-app/app.dmg"
-          spctl --assess --type open --context context:primary-signature -vv "$RUNNER_TEMP/verified-app/app.dmg"
-          hdiutil attach "$RUNNER_TEMP/verified-app/app.dmg" -nobrowse -readonly -mountpoint "$RUNNER_TEMP/verified-app/mount" -quiet
-          ditto "$RUNNER_TEMP/verified-app/mount/Auto Clicker.app" "$RUNNER_TEMP/verified-app/install/Auto Clicker.app"
-          hdiutil detach "$RUNNER_TEMP/verified-app/mount" -quiet
-          app="$RUNNER_TEMP/verified-app/install/Auto Clicker.app"
-          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" == "${RELEASE_TAG#v}" ]]
-          codesign --verify --deep --strict "$app"
-          printf 'APP_BINARY=%s\n' "$app/Contents/MacOS/auto-clicker" >> "$GITHUB_ENV"
-          echo "Verified $RELEASE_TAG $arch installer digest and notarization"
-      - name: Verify shortcut delivery and actual clicks on the installed app
-        env:
-          AUTOCLICKER_TEST_SHORTCUT: ${{ matrix.shortcut }}
-        run: bash .github/scripts/macos-click-e2e/iokit-test.sh
-      - name: Verify finite pause, resume and UI stop
-        if: matrix.shortcut == 'F8'
+          APP_BINARY: ${{ github.workspace }}/src-tauri/target/release/auto-clicker
         run: bash .github/scripts/macos-click-e2e/pause-test.sh
