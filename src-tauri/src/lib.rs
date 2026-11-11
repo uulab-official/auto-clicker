@@ -208,22 +208,76 @@ fn point_in_rect(x: f64, y: f64, left: i32, top: i32, width: u32, height: u32) -
     let (left, top) = (f64::from(left), f64::from(top));
     x >= left && y >= top && x < left + f64::from(width) && y < top + f64::from(height)
 }
+
+// Geometry alone cannot distinguish our window from another window above it.
+// On Windows, ask the window manager which window would receive a click.
+#[cfg(windows)]
+fn windows_target_is_app(window: &tauri::WebviewWindow, x: f64, y: f64) -> Option<bool> {
+    use std::ffi::c_void;
+
+    #[repr(C)]
+    struct Point {
+        x: i32,
+        y: i32,
+    }
+    #[link(name = "user32")]
+    extern "system" {
+        fn WindowFromPoint(point: Point) -> *mut c_void;
+        fn GetAncestor(window: *mut c_void, flags: u32) -> *mut c_void;
+    }
+    const GA_ROOT: u32 = 2;
+    if !x.is_finite()
+        || !y.is_finite()
+        || x < i32::MIN as f64
+        || x > i32::MAX as f64
+        || y < i32::MIN as f64
+        || y > i32::MAX as f64
+    {
+        return None;
+    }
+    let app_hwnd = window.hwnd().ok()?.0 as *mut c_void;
+    // The Windows API accepts physical screen coordinates and returns the
+    // topmost visible target. WebView controls may be child windows, so
+    // compare their root window rather than their immediate handles.
+    let hit = unsafe {
+        WindowFromPoint(Point {
+            x: x as i32,
+            y: y as i32,
+        })
+    };
+    if hit.is_null() || app_hwnd.is_null() {
+        return None;
+    }
+    let hit_root = unsafe { GetAncestor(hit, GA_ROOT) };
+    let app_root = unsafe { GetAncestor(app_hwnd, GA_ROOT) };
+    if hit_root.is_null() || app_root.is_null() {
+        None
+    } else {
+        Some(hit_root == app_root)
+    }
+}
 // A click landing on this app would press its own controls (for example the
 // Stop button that replaced Start under the pointer), ending the run at once.
 fn target_over_app(app: &tauri::AppHandle, target: Option<Position>) -> bool {
     let Some(window) = app.get_webview_window("main") else {
         return false;
     };
-    if !window.is_visible().unwrap_or(false)
-        || window.is_minimized().unwrap_or(false)
-        || !window.is_focused().unwrap_or(false)
-    {
+    if !window.is_visible().unwrap_or(false) || window.is_minimized().unwrap_or(false) {
         return false;
     }
     let point = match target {
         Some(pos) => Some((f64::from(pos.x), f64::from(pos.y))),
         None => window.cursor_position().ok().map(|pos| (pos.x, pos.y)),
     };
+    #[cfg(windows)]
+    if let Some((x, y)) = point {
+        if let Some(is_app) = windows_target_is_app(&window, x, y) {
+            return is_app;
+        }
+    }
+    if !window.is_focused().unwrap_or(false) {
+        return false;
+    }
     match (point, window.outer_position(), window.outer_size()) {
         (Some((x, y)), Ok(pos), Ok(size)) => {
             point_in_rect(x, y, pos.x, pos.y, size.width, size.height)

@@ -44,7 +44,7 @@ if args[1] == "stop" || args[1] == "hotkey-control" {
     key(56, false, [.maskControl]); key(59, false, [])
     exit(0)
 }
-guard ["start", "dump", "button", "fast"].contains(args[1]), args.count >= 3, let pid = Int32(args[2]) else { exit(2) }
+guard ["start", "dump", "button", "fast", "finite", "app-point"].contains(args[1]), args.count >= 3, let pid = Int32(args[2]) else { exit(2) }
 if args[1] == "button" && (args.count != 5 || Int(args[4]) == nil) { exit(2) }
 let labels = args[1] == "button" ? Set([args[3]]) : Set(["Start clicking", "클릭 시작", "クリックを開始"])
 let wanted = args[1] == "button" ? (Int(args[4]) ?? 0) : 0
@@ -53,6 +53,32 @@ let root = AXUIElementCreateApplication(pid)
 func attr(_ item: AXUIElement, _ name: CFString) -> CFTypeRef? {
     var value: CFTypeRef?
     return AXUIElementCopyAttributeValue(item, name, &value) == .success ? value : nil
+}
+if args[1] == "app-point" {
+    guard let windows = attr(root, kAXWindowsAttribute as CFString) as? [AXUIElement], let window = windows.first else { fputs("No application window\n", stderr); exit(1) }
+    guard let value = attr(window, kAXPositionAttribute as CFString), CFGetTypeID(value) == AXValueGetTypeID() else { exit(1) }
+    var point = CGPoint.zero
+    guard AXValueGetValue(value as! AXValue, .cgPoint, &point) else { exit(1) }
+    print("\(Int(point.x + 200)) \(Int(point.y + 100))")
+    exit(0)
+}
+if args[1] == "finite" {
+    var radios: [AXUIElement] = []
+    func walk(_ item: AXUIElement, _ depth: Int) {
+        if depth > 45 { return }
+        let role = (attr(item, kAXRoleAttribute as CFString) as? String) ?? ""
+        if role == "AXRadioButton" { radios.append(item); print("radio \(radios.count): \((attr(item, kAXTitleAttribute as CFString) as? String) ?? "") \((attr(item, kAXDescriptionAttribute as CFString) as? String) ?? "")") }
+        if let children = attr(item, kAXChildrenAttribute as CFString) as? [AXUIElement] { for child in children { walk(child, depth + 1) } }
+    }
+    for _ in 0..<60 {
+        radios = []; walk(root, 0)
+        if radios.count >= 2 {
+            guard AXUIElementPerformAction(radios[1], kAXPressAction as CFString) == .success else { fputs("Radio press failed\n", stderr); exit(1) }
+            print("Selected one repetition"); exit(0)
+        }
+        Thread.sleep(forTimeInterval: 1)
+    }
+    fputs("Repeat radios unavailable\n", stderr); exit(1)
 }
 func setFast(_ item: AXUIElement, _ depth: Int) -> Bool {
     if depth > 45 { return false }
