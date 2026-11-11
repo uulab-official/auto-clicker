@@ -24,6 +24,21 @@ if args[1] == "monitor" {
     CFRunLoopRunInMode(.defaultMode, 10, false)
     exit(0)
 }
+if args[1] == "assert-target-overlap", args.count == 6, let appPID = Int32(args[2]), let targetPID = Int32(args[3]), let x = Double(args[4]), let y = Double(args[5]) {
+    guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { exit(1) }
+    let point = CGPoint(x: x, y: y)
+    var appContains = false
+    var firstHit: Int32?
+    for entry in windows {
+        guard let owner = entry[kCGWindowOwnerPID as String] as? Int32, owner == appPID || owner == targetPID,
+              let bounds = entry[kCGWindowBounds as String] as? [String: Any], let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary), rect.contains(point) else { continue }
+        if firstHit == nil { firstHit = owner }
+        if owner == appPID { appContains = true }
+    }
+    guard appContains && firstHit == targetPID else { fputs("Target is not above the overlapping clicker at requested point\n", stderr); exit(1) }
+    print("Confirmed target pid \(targetPID) above overlapping clicker pid \(appPID) at \(point)")
+    exit(0)
+}
 if args[1] == "activate", args.count == 3, let pid = Int32(args[2]), let app = NSRunningApplication(processIdentifier: pid) {
     guard app.activate(options: [.activateIgnoringOtherApps]) else { fputs("Cannot activate target process\n", stderr); exit(1) }
     for _ in 0..<30 {

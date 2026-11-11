@@ -23,4 +23,4 @@ jobs:
       - name: Check inactive application pause, resume and stop
         env:
           APP_BINARY: ${{ github.workspace }}/src-tauri/target/release/auto-clicker
-        run: bash .github/scripts/macos-click-e2e/pause-test.sh
+        run: bash .github/scripts/macos-click-e2e/overlap-test.sh

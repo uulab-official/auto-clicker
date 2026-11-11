@@ -18,7 +18,7 @@ class Target: NSView {
 }
 let app = NSApplication.shared
 app.setActivationPolicy(.regular)
-let rect = NSRect(x: 30, y: 30, width: 160, height: 160)
+let rect = NSRect(x: 300, y: 500, width: 160, height: 160)
 let window = NSPanel(contentRect: rect, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
 window.level = .floating
 window.contentView = Target(frame: NSRect(x: 0, y: 0, width: 160, height: 160))
