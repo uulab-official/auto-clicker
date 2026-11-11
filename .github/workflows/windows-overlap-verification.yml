@@ -1,0 +1,23 @@
+name: Windows overlap regression verification
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - run: npm run build
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - run: cargo build --manifest-path src-tauri/Cargo.toml --locked
+      - name: Test input over an overlapping target and safety stop
+        shell: pwsh
+        run: |
+          $env:AUTOCLICKER_TEST_EXE = "${{ github.workspace }}\src-tauri\target\debug\auto-clicker.exe"
+          .github/scripts/windows-click-e2e/run.ps1

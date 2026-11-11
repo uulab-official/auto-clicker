@@ -108,7 +108,7 @@ try {
   $originalAppRect = [TestInput+Rect]::new()
   if (-not [TestInput]::GetWindowRect($app.MainWindowHandle,[ref]$originalAppRect)) { throw 'Cannot get original app rectangle' }
   Write-Host "Original app rectangle=$($originalAppRect.Left),$($originalAppRect.Top)-$($originalAppRect.Right),$($originalAppRect.Bottom)"
-  if (-not [TestInput]::SetWindowPos($app.MainWindowHandle,[IntPtr]::Zero,350,0,0,0,0x0005)) { throw 'Cannot move test app away from target' }
+  if (-not [TestInput]::SetWindowPos($app.MainWindowHandle,[IntPtr]::Zero,50,0,0,0,0x0005)) { throw 'Cannot position test app behind target' }
   Start-Sleep -Seconds 1
 
   $deadline = (Get-Date).AddSeconds(15)
@@ -122,6 +122,10 @@ try {
   $rect = [TestInput+Rect]::new()
   if (-not [TestInput]::GetWindowRect($targetProcess.MainWindowHandle,[ref]$rect)) { throw 'Cannot get target window rectangle' }
   Write-Host "Target handle=$($targetProcess.MainWindowHandle) rectangle=$($rect.Left),$($rect.Top)-$($rect.Right),$($rect.Bottom)"
+  $overlapRect = [TestInput+Rect]::new()
+  if (-not [TestInput]::GetWindowRect($app.MainWindowHandle,[ref]$overlapRect)) { throw 'Cannot get overlapped app rectangle' }
+  if (($rect.Left + 100) -lt $overlapRect.Left -or ($rect.Left + 100) -ge $overlapRect.Right -or ($rect.Top + 100) -lt $overlapRect.Top -or ($rect.Top + 100) -ge $overlapRect.Bottom) { throw 'Target point does not overlap application rectangle' }
+  Write-Host "Confirmed target point overlaps app rectangle $($overlapRect.Left),$($overlapRect.Top)-$($overlapRect.Right),$($overlapRect.Bottom)"
   # Invoke through UI Automation; place the cursor in the target after invocation
   # before the first click, then verify actual delivered Windows mouse events.
   $x = $rect.Left + 100; $y = $rect.Top + 100
