@@ -40,11 +40,8 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
-      - name: Test release metadata validation
+      - name: Test release automation
         if: runner.os == 'Linux'
-        run: python3 -m unittest discover -s .github/scripts/tests -p 'test_verify_release.py'
-      - name: Test automatic release version selection
-        if: runner.os == 'Linux'
-        run: python3 -m unittest discover -s .github/scripts/tests -p 'test_auto_release.py'
+        run: python3 -m unittest discover -s .github/scripts/tests
       - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
       - run: npm run tauri build -- --no-bundle

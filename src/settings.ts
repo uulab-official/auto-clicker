@@ -9,7 +9,7 @@ const isInteger = (value: unknown, min: number, max: number): value is number =>
 function isClick(value: unknown): value is Click {
   if (!value || typeof value !== 'object') return false;
   const c = value as Record<string, unknown>;
-  if (c.kind !== 'click' || !['left', 'right', 'middle'].includes(String(c.button)) || (c.clicks !== 1 && c.clicks !== 2) || !isInteger(c.interval_ms, 10, 86400000)) return false;
+  if (c.kind !== 'click' || (c.button !== 'left' && c.button !== 'right' && c.button !== 'middle') || (c.clicks !== 1 && c.clicks !== 2) || !isInteger(c.interval_ms, 10, 86400000)) return false;
   if (c.position === null) return true;
   if (!c.position || typeof c.position !== 'object') return false;
   const p = c.position as Record<string, unknown>;

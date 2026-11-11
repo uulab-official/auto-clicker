@@ -28,3 +28,8 @@ test('backup accepts prior settings while rejecting damaged and future formats',
     assert.throws(() => parseBackup(value));
   }
 });
+test('backup and persisted settings reject non-string mouse buttons', () => {
+  const invalid = { ...defaults(), simple: { ...defaults().simple, button: ['left'] } };
+  assert.deepEqual(parseSettings(JSON.stringify(invalid)), defaults());
+  assert.throws(() => parseBackup(JSON.stringify(invalid)));
+});

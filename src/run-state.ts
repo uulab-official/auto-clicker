@@ -6,6 +6,12 @@ export function toggleDisabled(status: Status, ready: boolean, capturing: boolea
   return status.running ? false : !ready || capturing || installing || Boolean(status.shortcut_error) || !Array.isArray(status.available_shortcuts) || !status.available_shortcuts.some(shortcut => typeof shortcut === 'string' && shortcut.length > 0);
 }
 
+// A backup dialog can still be open when a run status event arrives. Never
+// let that unrelated activity prevent the user from stopping an active run.
+export function actionBlockedByFileOperation(action: string | undefined, status: Status, fileBusy: boolean): boolean {
+  return fileBusy && !(action === 'toggle' && status.running);
+}
+
 // A snapshot requested after subscribing can arrive after a newer event.
 export class StatusSnapshotGate {
   private generation = 0;

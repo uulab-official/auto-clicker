@@ -5,7 +5,7 @@ import { open as openFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import './style.css';
 import { translate, translateDom, type Language } from './i18n';
 import { defaultClick, defaults, parseSettings, parseBackup, serializeBackup, MAX_BACKUP_BYTES, type Settings, type Click, type Step, type Position } from './settings';
-import { StatusSnapshotGate, toggleDisabled, type Status } from './run-state';
+import { actionBlockedByFileOperation, StatusSnapshotGate, toggleDisabled, type Status } from './run-state';
 
 const key = 'open-clicker-settings-v1';
 let settings = defaults();
@@ -39,6 +39,7 @@ function clickFields(step: Click, index: string) {
     ${position ? `<div class="row coordinates"><label><span class="label">X coordinate</span><input type="number" step="1" min="-2147483648" max="2147483647" data-index="${index}" data-field="x" value="${escape(position.x)}" required></label><label><span class="label">Y coordinate</span><input type="number" step="1" min="-2147483648" max="2147483647" data-index="${index}" data-field="y" value="${escape(position.y)}" required></label></div>` : ''}`;
 }
 function render() {
+  const scrollTop = app.querySelector<HTMLElement>('.content')?.scrollTop ?? 0;
   // Status and update events can arrive while a field is being edited. Replacing
   // the DOM must not discard the user's unfinished value or keyboard focus.
   const active = document.activeElement instanceof HTMLElement && app.contains(document.activeElement) ? document.activeElement : null;
@@ -80,12 +81,14 @@ function render() {
       <div class="run-info">
         <div class="status ${status.running ? 'active' : ''}" role="status"><span class="status-dot"></span><span>${status.running ? 'Running' : 'Ready'}</span>${status.running ? `<span class="cycles">Completed cycles: ${status.completed_cycles}</span>` : ''}</div>
         <div class="shortcut ${status.running ? 'live' : ''}"><span>${status.running ? 'Press to stop' : 'Stop shortcut'}</span>${shortcuts.length ? shortcuts.map(shortcut => shortcut.split('+').map(key => `<kbd>${escape(key)}</kbd>`).join('<span class="plus">+</span>')).join('<span>or</span>') : `<span>${statusReady ? 'No shortcut available' : 'Checking shortcuts…'}</span>`}</div>${isMac && shortcuts.includes('Ctrl+Shift+F8') ? '<p class="hint">On some Mac keyboards, hold Fn or Globe with F8 to use it as a function key.</p>' : ''}
-        ${status.running && status.paused_over_app ? '<p class="hint paused">Clicking is paused while the pointer is over this window. Move it to where you want to click.</p>' : ''}
+        ${status.running && status.paused_over_app ? '<p class="hint paused">Clicking is paused while the pointer or target is over this window. Move the pointer or window, or stop the run.</p>' : ''}
       </div>
       <button type="button" class="button primary ${status.running ? 'stop' : ''}" data-action="toggle"${disabled(toggleDisabled(status, statusReady, capturing || fileBusy, updateState === 'installing'))}>${status.running ? '<span aria-hidden="true">■</span> Stop clicking' : '<span aria-hidden="true">▶</span> Start clicking'}</button>
     </footer></main>`;
   document.documentElement.lang = language;
   translateDom(app, language);
+  const content = app.querySelector<HTMLElement>('.content');
+  if (content) content.scrollTop = scrollTop;
   if (selector) {
     const replacement = app.querySelector<HTMLElement>(selector);
     if (replacement && !(replacement instanceof HTMLButtonElement && replacement.disabled) && !(replacement instanceof HTMLInputElement && replacement.disabled)) {
@@ -147,7 +150,7 @@ app.addEventListener('input', e => { const t = e.target; if (t instanceof HTMLIn
 app.addEventListener('change', e => { const t = e.target; if (t instanceof HTMLSelectElement && t.id === 'language') { if (t.value === 'en' || t.value === 'ko' || t.value === 'ja') { language = t.value; try { localStorage.setItem('open-clicker-language', language); } catch { /* selection lasts for this session */ } render(); } return; } if (t instanceof HTMLSelectElement || (t instanceof HTMLInputElement && t.type === 'radio')) changeInput(t); });
 app.addEventListener('click', async e => {
   const button = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-action]');
-  if (!button || fileBusy) return;
+  if (!button || actionBlockedByFileOperation(button.dataset.action, status, fileBusy)) return;
   const { action, index = '' } = button.dataset;
   if (action === 'export-settings' || action === 'import-settings') {
     if (status.running || capturing || updateState === 'installing') return;

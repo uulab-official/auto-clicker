@@ -210,7 +210,7 @@ fn point_in_rect(x: f64, y: f64, left: i32, top: i32, width: u32, height: u32) -
 }
 // A click landing on this app would press its own controls (for example the
 // Stop button that replaced Start under the pointer), ending the run at once.
-fn pointer_over_app(app: &tauri::AppHandle) -> bool {
+fn target_over_app(app: &tauri::AppHandle, target: Option<Position>) -> bool {
     let Some(window) = app.get_webview_window("main") else {
         return false;
     };
@@ -220,9 +220,13 @@ fn pointer_over_app(app: &tauri::AppHandle) -> bool {
     {
         return false;
     }
-    match (window.cursor_position(), window.outer_position(), window.outer_size()) {
-        (Ok(cursor), Ok(pos), Ok(size)) => {
-            point_in_rect(cursor.x, cursor.y, pos.x, pos.y, size.width, size.height)
+    let point = match target {
+        Some(pos) => Some((f64::from(pos.x), f64::from(pos.y))),
+        None => window.cursor_position().ok().map(|pos| (pos.x, pos.y)),
+    };
+    match (point, window.outer_position(), window.outer_size()) {
+        (Some((x, y)), Ok(pos), Ok(size)) => {
+            point_in_rect(x, y, pos.x, pos.y, size.width, size.height)
         }
         _ => false,
     }
@@ -239,6 +243,24 @@ fn set_paused_over_app(app: &tauri::AppHandle, paused: bool) {
 fn position_matches(target: Position, actual: (i32, i32)) -> bool {
     (i64::from(target.x) - i64::from(actual.0)).abs() <= 2
         && (i64::from(target.y) - i64::from(actual.1)).abs() <= 2
+}
+// Retry the same step while the target is blocked. A blocked click must not
+// count as a completed step or consume a finite repetition.
+fn wait_for_click_target(
+    cancel: &AtomicBool,
+    mut ready: impl FnMut() -> Result<bool, String>,
+) -> Result<bool, String> {
+    loop {
+        if cancel.load(Ordering::Acquire) {
+            return Ok(false);
+        }
+        if ready()? {
+            return Ok(!cancel.load(Ordering::Acquire));
+        }
+        if !sleep_interruptibly(cancel, 50) {
+            return Ok(false);
+        }
+    }
 }
 fn execute(
     config: &Config,
@@ -323,36 +345,45 @@ fn start(app: &tauri::AppHandle, config: Config) -> Result<(), String> {
                         ..
                     } = step
                     {
-                        if let Some(pos) = position {
-                            if cancel.load(Ordering::Acquire) {
-                                return Ok(());
-                            }
-                            enigo
-                                .move_mouse(pos.x, pos.y, Coordinate::Abs)
-                                .map_err(|e| e.to_string())?;
-                            // Backends may clamp an unavailable display or reject a move silently.
-                            // Give the OS time to process the move, but never click at a wrong point.
-                            let mut matched = false;
-                            for attempt in 0..=10 {
+                        let ready = wait_for_click_target(&cancel, || {
+                            if let Some(pos) = position {
                                 if cancel.load(Ordering::Acquire) {
-                                    return Ok(());
+                                    return Ok(false);
                                 }
-                                let actual = enigo.location().map_err(|e| e.to_string())?;
-                                if position_matches(*pos, actual) {
-                                    matched = true;
-                                    break;
+                                // Do not repeatedly warp the pointer into our own window while
+                                // paused: the user must remain able to use its Stop button.
+                                if target_over_app(&app, Some(*pos)) {
+                                    set_paused_over_app(&app, true);
+                                    return Ok(false);
                                 }
-                                if attempt < 10 && !sleep_interruptibly(&cancel, 10) {
-                                    return Ok(());
+                                enigo
+                                    .move_mouse(pos.x, pos.y, Coordinate::Abs)
+                                    .map_err(|e| e.to_string())?;
+                                // Backends may clamp an unavailable display or reject a move silently.
+                                // Give the OS time to process the move, but never click at a wrong point.
+                                let mut matched = false;
+                                for attempt in 0..=10 {
+                                    if cancel.load(Ordering::Acquire) {
+                                        return Ok(false);
+                                    }
+                                    let actual = enigo.location().map_err(|e| e.to_string())?;
+                                    if position_matches(*pos, actual) {
+                                        matched = true;
+                                        break;
+                                    }
+                                    if attempt < 10 && !sleep_interruptibly(&cancel, 10) {
+                                        return Ok(false);
+                                    }
+                                }
+                                if !matched {
+                                    return Err(format!("Could not move to ({}, {}). Check the display layout or permissions; this step was not clicked.", pos.x, pos.y));
                                 }
                             }
-                            if !matched {
-                                return Err(format!("Could not move to ({}, {}). Check the display layout or permissions; this step was not clicked.", pos.x, pos.y));
-                            }
-                        }
-                        let over_app = pointer_over_app(&app);
-                        set_paused_over_app(&app, over_app);
-                        if over_app {
+                            let over_app = target_over_app(&app, None);
+                            set_paused_over_app(&app, over_app);
+                            Ok(!over_app)
+                        })?;
+                        if !ready {
                             return Ok(());
                         }
                         let button = match button {
@@ -644,6 +675,76 @@ mod run_tests {
         )
         .unwrap();
         assert_eq!(clicks, 0);
+    }
+
+    #[test]
+    fn blocked_click_does_not_consume_a_finite_cycle() {
+        let config = Config {
+            steps: vec![Step::Click {
+                button: MouseButton::Left,
+                clicks: 1,
+                position: None,
+                interval_ms: 10,
+            }],
+            repeat: Some(1),
+            start_delay_ms: 0,
+        };
+        let mut attempts = 0;
+        let mut clicks = 0;
+        let mut cycles = 0;
+        let cancel = AtomicBool::new(false);
+        execute(
+            &config,
+            &cancel,
+            || cycles += 1,
+            |_| {
+                if wait_for_click_target(&cancel, || {
+                    attempts += 1;
+                    Ok(attempts > 1)
+                })? {
+                    clicks += 1;
+                }
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(attempts, 2);
+        assert_eq!(clicks, 1);
+        assert_eq!(cycles, 1);
+    }
+
+    #[test]
+    fn blocked_click_can_be_cancelled_without_completing_a_cycle() {
+        let config = Config {
+            steps: vec![Step::Click {
+                button: MouseButton::Left,
+                clicks: 1,
+                position: None,
+                interval_ms: 10,
+            }],
+            repeat: Some(1),
+            start_delay_ms: 0,
+        };
+        let cancel = AtomicBool::new(false);
+        let mut cycles = 0;
+        let mut clicks = 0;
+        execute(
+            &config,
+            &cancel,
+            || cycles += 1,
+            |_| {
+                if wait_for_click_target(&cancel, || {
+                    cancel.store(true, Ordering::Release);
+                    Ok(false)
+                })? {
+                    clicks += 1;
+                }
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(clicks, 0);
+        assert_eq!(cycles, 0);
     }
 
     #[test]

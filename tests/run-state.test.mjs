@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { StatusSnapshotGate, toggleDisabled } from '../src/run-state.ts';
+import { actionBlockedByFileOperation, StatusSnapshotGate, toggleDisabled } from '../src/run-state.ts';
 const ready = { running: false, completed_cycles: 0, error: null, shortcut_error: null, shortcut_warning: null, available_shortcuts: ['Ctrl+Shift+F8'] };
 test('starting requires a confirmed emergency shortcut and an idle UI', () => {
   assert.equal(toggleDisabled(ready, false, false, false), true);
@@ -15,6 +15,10 @@ test('starting requires a confirmed emergency shortcut and an idle UI', () => {
 });
 test('stopping remains available during a run even if other state changes', () => {
   assert.equal(toggleDisabled({ ...ready, running: true, shortcut_error: 'lost' }, false, true, true), false);
+  assert.equal(actionBlockedByFileOperation('toggle', { ...ready, running: true }, true), false);
+  assert.equal(actionBlockedByFileOperation('toggle', ready, true), true);
+  assert.equal(actionBlockedByFileOperation('import-settings', { ...ready, running: true }, true), true);
+  assert.equal(actionBlockedByFileOperation('toggle', ready, false), false);
 });
 
 test('an event received while fetching a snapshot prevents stale state from replacing it', () => {
