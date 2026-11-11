@@ -24,6 +24,8 @@ PY
 curl --fail --location --silent --show-error -H 'Accept: application/octet-stream' -H 'User-Agent: auto-clicker-release-verification' -o "$work/expected.AppImage" "$(cat "$work/target.url")"
 fi
 python3 .github/scripts/public-update-e2e/release_info.py "$baseline_version" "$expected_version" _amd64.AppImage "$work/install/Auto Clicker.AppImage"
+# The installed app must exercise the public updater without CI credentials.
+unset GH_TOKEN
 chmod +x "$work/install/Auto Clicker.AppImage"
 if [[ "${PUBLIC_UPDATE_PROBE_ONLY:-0}" != 1 ]]; then
 base_hash=$(sha256sum "$work/install/Auto Clicker.AppImage" | awk '{print $1}')

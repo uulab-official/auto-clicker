@@ -41,6 +41,8 @@ expected_app="$(find "$work/expected" -maxdepth 1 -type d -name '*.app' -print -
 expected_hash=$(shasum -a 256 "$expected_app/Contents/MacOS/auto-clicker" | awk '{print $1}')
 fi
 python3 .github/scripts/public-update-e2e/release_info.py "$baseline_version" "$expected_version" "_${download_arch}.dmg" "$work/public.dmg"
+# The installed app must exercise the public updater without CI credentials.
+unset GH_TOKEN
 codesign --verify --strict "$work/public.dmg"
 xcrun stapler validate "$work/public.dmg"
 spctl --assess --type open --context context:primary-signature --verbose=2 "$work/public.dmg"

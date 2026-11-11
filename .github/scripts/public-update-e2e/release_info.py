@@ -2,6 +2,8 @@
 """Resolve a single published baseline installer for an isolated upgrade test."""
 import hashlib
 import json
+import os
+import subprocess
 import re
 import sys
 from pathlib import Path
@@ -44,9 +46,15 @@ def main():
         raise SystemExit('Usage: release_info.py BASELINE TARGET SUFFIX OUTPUT')
     baseline, target, suffix, output = sys.argv[1:]
     validate_versions(baseline, target)
-    request = Request(f'https://api.github.com/repos/{_REPO}/releases/tags/v{baseline}', headers={'User-Agent': 'auto-clicker-release-verification', 'Accept': 'application/vnd.github+json'})
-    with urlopen(request, timeout=30) as response:
-        release = json.load(response)
+    # Authenticate only the fixed GitHub metadata lookup. Artifact downloads and
+    # the actual installed app still use their ordinary public URLs.
+    endpoint = f'repos/{_REPO}/releases/tags/v{baseline}'
+    if os.environ.get('GH_TOKEN'):
+        release = json.loads(subprocess.check_output(['gh', 'api', endpoint], timeout=30))
+    else:
+        request = Request(f'https://api.github.com/{endpoint}', headers={'User-Agent': 'auto-clicker-release-verification', 'Accept': 'application/vnd.github+json'})
+        with urlopen(request, timeout=30) as response:
+            release = json.load(response)
     url, expected = select_baseline_asset(release, baseline, suffix)
     target_path = Path(output)
     digest = hashlib.sha256()
