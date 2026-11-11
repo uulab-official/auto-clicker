@@ -12,6 +12,7 @@ public static class TestInput {
   [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left; public int Top; public int Right; public int Bottom; }
   [DllImport("user32.dll")] public static extern bool GetCursorPos(out Point point);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr window, out Rect rect);
+  [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int cx, int cy, uint flags);
   [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(Point point);
   [DllImport("user32.dll")] public static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
 }
@@ -104,6 +105,12 @@ try {
     }
   } while (-not $start -and (Get-Date) -lt $deadline)
   if (-not $start) { throw 'Enabled Start clicking button was not found' }
+  $originalAppRect = [TestInput+Rect]::new()
+  if (-not [TestInput]::GetWindowRect($app.MainWindowHandle,[ref]$originalAppRect)) { throw 'Cannot get original app rectangle' }
+  Write-Host "Original app rectangle=$($originalAppRect.Left),$($originalAppRect.Top)-$($originalAppRect.Right),$($originalAppRect.Bottom)"
+  if (-not [TestInput]::SetWindowPos($app.MainWindowHandle,[IntPtr]::Zero,350,0,0,0,0x0005)) { throw 'Cannot move test app away from target' }
+  Start-Sleep -Seconds 1
+
   $deadline = (Get-Date).AddSeconds(15)
   do {
     $targetProcess.Refresh()
