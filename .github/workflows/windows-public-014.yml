@@ -1,6 +1,11 @@
-name: Windows public v0.1.4 functionality
+name: Windows public release functionality
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Public release tag to test
+        required: true
+        default: v0.1.11
 permissions:
   contents: read
 jobs:
@@ -9,7 +14,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-      - name: Install the verified public v0.1.4 MSI
+      - name: Install the verified public MSI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
         shell: pwsh
         run: .github/scripts/windows-public-014/install.ps1
       - name: Exercise actual backup and restore dialogs
@@ -20,7 +28,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-      - name: Install the verified public v0.1.4 MSI
+      - name: Install the verified public MSI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
         shell: pwsh
         run: .github/scripts/windows-public-014/install.ps1
       - name: Exercise clicks and emergency stop

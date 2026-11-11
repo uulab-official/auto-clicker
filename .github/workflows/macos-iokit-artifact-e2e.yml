@@ -53,3 +53,6 @@ jobs:
         env:
           AUTOCLICKER_TEST_SHORTCUT: ${{ matrix.shortcut }}
         run: bash .github/scripts/macos-click-e2e/iokit-test.sh
+      - name: Verify finite pause, resume and UI stop
+        if: matrix.shortcut == 'F8'
+        run: bash .github/scripts/macos-click-e2e/pause-test.sh

@@ -42,3 +42,6 @@ jobs:
           echo "Verified public $RELEASE_TAG AppImage SHA256 $expected"
       - name: Verify click and emergency stop on isolated X11
         run: xvfb-run -a -s '-screen 0 1280x1024x24' dbus-run-session -- bash .github/scripts/linux-click-e2e/run.sh
+
+      - name: Verify finite pause and UI stop on public app
+        run: xvfb-run -a -s '-screen 0 1280x1024x24' dbus-run-session -- bash .github/scripts/public-pause-e2e/run.sh

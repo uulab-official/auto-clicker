@@ -12,6 +12,7 @@ public static class TestInput {
   [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left; public int Top; public int Right; public int Bottom; }
   [DllImport("user32.dll")] public static extern bool GetCursorPos(out Point point);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr window, out Rect rect);
+  [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int cx, int cy, uint flags);
   [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(Point point);
   [DllImport("user32.dll")] public static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
 }
@@ -104,6 +105,12 @@ try {
     }
   } while (-not $start -and (Get-Date) -lt $deadline)
   if (-not $start) { throw 'Enabled Start clicking button was not found' }
+  $originalAppRect = [TestInput+Rect]::new()
+  if (-not [TestInput]::GetWindowRect($app.MainWindowHandle,[ref]$originalAppRect)) { throw 'Cannot get original app rectangle' }
+  Write-Host "Original app rectangle=$($originalAppRect.Left),$($originalAppRect.Top)-$($originalAppRect.Right),$($originalAppRect.Bottom)"
+  if (-not [TestInput]::SetWindowPos($app.MainWindowHandle,[IntPtr]::Zero,350,0,0,0,0x0005)) { throw 'Cannot move test app away from target' }
+  Start-Sleep -Seconds 1
+
   $deadline = (Get-Date).AddSeconds(15)
   do {
     $targetProcess.Refresh()
@@ -156,7 +163,7 @@ try {
   Invoke-Button 'Sequence'
   # UIA Invoke may return before the WebView handles the tab click. Wait for
   # the sequence view, otherwise the next action can capture the simple step.
-  Wait-AppText 'Actions run from top to bottom, then repeat.'
+  Wait-AppText '+ Add click'
   Invoke-Button 'Pick position'
   [TestInput]::SetCursorPos(($rect.Left + 70),($rect.Top + 100)) | Out-Null
   Wait-AppText "Position captured: $(($rect.Left + 70)), $(($rect.Top + 100))."
@@ -227,6 +234,42 @@ try {
     throw "Expected exactly four right-button events from two double-click cycles: $($lines -join '; ')"
   }
   Write-Host "Finite two-cycle right double-click run delivered exactly four right events and stopped: $($lines -join '; ')"
+
+  # A finite run must remain on its first cycle while the pointer is over
+  # the app, then deliver both cycles when the pointer leaves the window.
+  Remove-Item -LiteralPath $log -ErrorAction SilentlyContinue
+  $appRect = [TestInput+Rect]::new()
+  if (-not [TestInput]::GetWindowRect($app.MainWindowHandle,[ref]$appRect)) { throw 'Cannot get app rectangle' }
+  [TestInput]::SetCursorPos(($appRect.Right - 50),($appRect.Top + 200)) | Out-Null
+  Invoke-Button 'Start clicking'
+  Wait-AppText 'Clicking is paused while the pointer or target is over this window. Move the pointer or window, or stop the run.'
+  Start-Sleep -Seconds 3
+  $pausedCount = if (Test-Path $log) { @(Get-Content $log).Count } else { 0 }
+  if ($pausedCount -ne 0) { throw "Click escaped while over own window: $pausedCount" }
+  [TestInput]::SetCursorPos(($rect.Left + 100),($rect.Top + 100)) | Out-Null
+  $deadline = (Get-Date).AddSeconds(20)
+  do {
+    Start-Sleep -Milliseconds 500
+    $lines = if (Test-Path $log) { @(Get-Content $log) } else { @() }
+  } while ($lines.Count -lt 4 -and (Get-Date) -lt $deadline)
+  Start-Sleep -Seconds 3
+  $lines = if (Test-Path $log) { @(Get-Content $log) } else { @() }
+  if ($lines.Count -ne 4 -or @($lines | Where-Object { $_ -notmatch '^Right,' }).Count -ne 0) { throw "Paused finite run did not deliver two right double-click cycles: $($lines -join '; ')" }
+  Wait-AppText 'Start clicking'
+  Write-Host 'Blocked finite run resumed and completed both cycles without consuming them during pause'
+
+  # UI Stop remains actionable while paused over the app.
+  Remove-Item -LiteralPath $log -ErrorAction SilentlyContinue
+  [TestInput]::SetCursorPos(($appRect.Right - 50),($appRect.Top + 200)) | Out-Null
+  Invoke-Button 'Start clicking'
+  Wait-AppText 'Clicking is paused while the pointer or target is over this window. Move the pointer or window, or stop the run.'
+  Invoke-Button 'Stop clicking'
+  Wait-AppText 'Start clicking'
+  [TestInput]::SetCursorPos(($rect.Left + 100),($rect.Top + 100)) | Out-Null
+  Start-Sleep -Seconds 4
+  $afterStop = if (Test-Path $log) { @(Get-Content $log).Count } else { 0 }
+  if ($afterStop -ne 0) { throw "Clicks occurred after UI stop while paused: $afterStop" }
+  Write-Host 'UI stop halted the paused run without delivering clicks'
 } finally {
   if ($app) { Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue }
   Stop-Process -Id $targetProcess.Id -Force -ErrorAction SilentlyContinue

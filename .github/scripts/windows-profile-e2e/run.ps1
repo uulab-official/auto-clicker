@@ -104,6 +104,19 @@ function Cancel-Dialog([string]$title) {
   [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
 }
 function Wait-Text([string]$text) { $null = Find-AppNode { param($n) $n.Current.Name -like "*$text*" } }
+function Open-MoreOptions {
+  # The application uses a disclosure element; its control type varies with
+  # the installed WebView version, so use the supported accessibility action.
+  $null = Find-AppNode { param($n)
+    if (-not $n.Current.Name -or -not $n.Current.Name.EndsWith('More options') -or -not $n.Current.IsEnabled) { return $false }
+    $pattern = $null
+    if ($n.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pattern)) { $pattern.Invoke(); return $true }
+    if ($n.TryGetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern, [ref]$pattern)) { $pattern.Expand(); return $true }
+    return $false
+  }
+  $null = Find-AppNode { param($n) $n.Current.Name -eq 'Export settings' -and $n.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and $n.Current.IsEnabled }
+  Write-Host 'Opened More options'
+}
 function Export-Settings([string]$path) {
   Invoke-AppButton 'Export settings'
   Choose-File 'Export settings' $path 'Save'
@@ -120,6 +133,7 @@ function Import-Settings([string]$path) {
 
 try {
   Set-Delay 3
+  Open-MoreOptions
   $original = Join-Path $work 'original.json'
   if ((Export-Settings $original).startDelayMs -ne 3000) { throw 'Original settings export did not include the 3s delay' }
   Set-Delay 7
