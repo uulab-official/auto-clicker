@@ -1,32 +1,23 @@
-name: Windows public v0.1.11 functionality
-on:
-  workflow_dispatch:
+name: Windows overlap regression verification
+on: workflow_dispatch
 permissions:
   contents: read
 jobs:
-  backup:
+  verify:
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - name: Install the verified public v0.1.11 MSI
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - run: npm run build
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - run: cargo build --manifest-path src-tauri/Cargo.toml --locked
+      - name: Test input over an overlapping target and safety stop
         shell: pwsh
-        run: .github/scripts/windows-public-014/install.ps1
-      - name: Exercise actual backup and restore dialogs
-        shell: pwsh
-        run: .github/scripts/windows-profile-e2e/run.ps1
-  clicks:
-    runs-on: windows-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v7
-      - name: Install the verified public v0.1.11 MSI
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: pwsh
-        run: .github/scripts/windows-public-014/install.ps1
-      - name: Exercise clicks and emergency stop
-        shell: pwsh
-        run: .github/scripts/windows-click-e2e/run.ps1
+        run: |
+          $env:AUTOCLICKER_TEST_EXE = "${{ github.workspace }}\src-tauri\target\debug\auto-clicker.exe"
+          .github/scripts/windows-click-e2e/run.ps1
