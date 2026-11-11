@@ -13,6 +13,11 @@ for _ in $(seq 1 60); do [[ -s "$work/events" ]] && break; kill -0 "$target_pid"
 read -r label x y < "$work/events"
 [[ "$label" == point ]] || exit 1
 "$work/control" move "$x" "$y"
+for _ in $(seq 1 30); do
+  if "$work/control" assert-target-overlap "$app_pid" "$target_pid" "$x" "$y"; then break; fi
+  sleep 1
+done
+"$work/control" diagnose "$app_pid"
 "$work/control" assert-target-overlap "$app_pid" "$target_pid" "$x" "$y"
 "$work/control" start "$app_pid"
 count=0
