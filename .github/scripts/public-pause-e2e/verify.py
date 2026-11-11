@@ -50,13 +50,18 @@ def find(predicate, timeout=30):
     raise RuntimeError('Could not find the required application control')
 
 def press(name):
-    node = find(lambda n: n.name == name and n.getRoleName() in ('push button', 'button'))
-    action = node.queryAction()
-    for i in range(action.nActions):
-        if action.getName(i).lower() in ('click', 'press', 'activate') and action.doAction(i):
-            return
+    end = time.monotonic() + 30
+    while time.monotonic() < end:
+        try:
+            node = find(lambda n: n.name == name and n.getRoleName() in ('push button', 'button'), 2)
+            action = node.queryAction()
+            for i in range(action.nActions):
+                if action.getName(i).lower() in ('click', 'press', 'activate') and action.doAction(i):
+                    return
+        except (LookupError, RuntimeError, NotImplementedError):
+            pass
+        time.sleep(.3)
     raise RuntimeError(f'Could not activate {name}')
-
 
 # Use the finite count already set to one, then leave the pointer inside the app.
 radio = find(lambda n: n.getRoleName() == 'radio button' and 'times' in (n.name or ''))
