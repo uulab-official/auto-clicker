@@ -15,6 +15,7 @@ read -r label x y < "$work/events"
 "$work/control" finite "$app_pid"
 read -r appx appy < <("$work/control" app-point "$app_pid")
 "$work/control" move "$appx" "$appy"
+"$work/control" activate "$target_pid"
 "$work/control" diagnose "$app_pid"
 "$work/control" start "$app_pid"
 "$work/control" diagnose "$app_pid"

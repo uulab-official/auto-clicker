@@ -17,7 +17,7 @@ class Target: NSView {
     override func draw(_ dirtyRect: NSRect) { NSColor.systemBlue.setFill(); dirtyRect.fill() }
 }
 let app = NSApplication.shared
-app.setActivationPolicy(.accessory)
+app.setActivationPolicy(.regular)
 let rect = NSRect(x: 30, y: 30, width: 160, height: 160)
 let window = NSPanel(contentRect: rect, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
 window.level = .floating
