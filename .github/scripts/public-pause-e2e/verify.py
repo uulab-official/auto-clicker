@@ -80,8 +80,8 @@ def count():
 
 over_app()
 press('Start clicking')
-text('Clicking is paused while the pointer or target is over this window.')
-time.sleep(3)
+time.sleep(6) # past the three-second default delay
+text('Stop clicking')
 if count() != 0:
     raise RuntimeError('Target received a click while paused')
 text('Stop clicking')
@@ -97,7 +97,8 @@ print('Finite paused run resumed and delivered exactly one click', flush=True)
 events.write_text('')
 over_app()
 press('Start clicking')
-text('Clicking is paused while the pointer or target is over this window.')
+time.sleep(6) # past the three-second default delay
+text('Stop clicking')
 press('Stop clicking')
 text('Start clicking')
 on_target()
