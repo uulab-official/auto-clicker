@@ -32,6 +32,11 @@ if args[1] == "activate", args.count == 3, let pid = Int32(args[2]), let app = N
     }
     fputs("Target process was not activated\n", stderr); exit(1)
 }
+if args[1] == "assert-inactive", args.count == 3, let pid = Int32(args[2]), let app = NSRunningApplication(processIdentifier: pid) {
+    guard !app.isActive else { fputs("Clicker unexpectedly active; cannot test inactive-window behavior\n", stderr); exit(1) }
+    print("Confirmed clicker is inactive")
+    exit(0)
+}
 if args[1] == "diagnose", args.count == 3, let pid = Int32(args[2]) {
     let active = NSRunningApplication(processIdentifier: pid)?.isActive ?? false
     let mouse = CGEvent(source: nil)?.location ?? .zero

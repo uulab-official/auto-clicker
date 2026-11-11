@@ -17,6 +17,7 @@ read -r appx appy < <("$work/control" app-point "$app_pid")
 "$work/control" move "$appx" "$appy"
 osascript -e 'tell application "Finder" to activate'
 sleep 1
+"$work/control" assert-inactive "$app_pid"
 "$work/control" diagnose "$app_pid"
 "$work/control" start "$app_pid"
 "$work/control" diagnose "$app_pid"
