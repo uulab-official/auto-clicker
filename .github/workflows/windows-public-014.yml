@@ -15,9 +15,9 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
-      - run: cargo build --manifest-path src-tauri/Cargo.toml --locked
+      - run: npm run tauri build -- --no-bundle
       - name: Test input over an overlapping target and safety stop
         shell: pwsh
         run: |
-          $env:AUTOCLICKER_TEST_EXE = "${{ github.workspace }}\src-tauri\target\debug\auto-clicker.exe"
+          $env:AUTOCLICKER_TEST_EXE = "${{ github.workspace }}\src-tauri\target\release\auto-clicker.exe"
           .github/scripts/windows-click-e2e/run.ps1
