@@ -67,7 +67,7 @@ if args[1] == "finite" {
     func walk(_ item: AXUIElement, _ depth: Int) {
         if depth > 45 { return }
         let role = (attr(item, kAXRoleAttribute as CFString) as? String) ?? ""
-        if role == "AXRadioButton" { radios.append(item); print("radio \(radios.count): \(attr(item, kAXTitleAttribute as CFString) ?? "") \(attr(item, kAXDescriptionAttribute as CFString) ?? "")") }
+        if role == "AXRadioButton" { radios.append(item); print("radio \(radios.count): \((attr(item, kAXTitleAttribute as CFString) as? String) ?? "") \((attr(item, kAXDescriptionAttribute as CFString) as? String) ?? "")") }
         if let children = attr(item, kAXChildrenAttribute as CFString) as? [AXUIElement] { for child in children { walk(child, depth + 1) } }
     }
     for _ in 0..<60 {
