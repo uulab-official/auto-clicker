@@ -15,8 +15,15 @@ read -r label x y < "$work/events"
 "$work/control" finite "$app_pid"
 read -r appx appy < <("$work/control" app-point "$app_pid")
 "$work/control" move "$appx" "$appy"
+# A background window still receives a click when it is topmost at the point.
+# Keep the target inactive so this catches accidental focus-only protection.
+osascript -e 'tell application "Finder" to activate'
+sleep 1
+"$work/control" assert-inactive "$app_pid"
 "$work/control" start "$app_pid"
+"$work/control" assert-inactive "$app_pid"
 sleep 6
+"$work/control" assert-inactive "$app_pid"
 "$work/control" dump "$app_pid" > "$work/paused"
 cat "$work/paused"
 grep -qi 'paused while the pointer' "$work/paused" || { echo 'No paused state' >&2; exit 1; }
