@@ -45,15 +45,16 @@ AUTOCLICKER_EXPERIMENTAL_WAYLAND=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 GDK_BACKEND
 sleep 5
 /usr/bin/python3 experiments/wayland-portal/gnome_approve.py gnome-control-center-global-shortcuts-provider 'Add Keyboard Shortcuts' Add
 echo '--- Prepare isolated virtual keyboard ---'
-WAYLAND_PROTOTYPE_WAIT_FILE="$XDG_RUNTIME_DIR/send-key" WAYLAND_PROTOTYPE_KEYBOARD_TEST=1 experiments/wayland-portal/target/debug/wayland-portal-prototype >"$work/keyboard.log" 2>&1 & keyboard_pid=$!
+WAYLAND_PROTOTYPE_TARGET_READY="$XDG_RUNTIME_DIR/target-ready" WAYLAND_PROTOTYPE_WAIT_FILE="$XDG_RUNTIME_DIR/send-key" WAYLAND_PROTOTYPE_KEYBOARD_TEST=1 experiments/wayland-portal/target/debug/wayland-portal-prototype >"$work/keyboard.log" 2>&1 & keyboard_pid=$!
 sleep 5
 /usr/bin/python3 experiments/wayland-portal/gnome_approve.py xdg-desktop-portal-gnome 'Remote Desktop' --enable-remote
 /usr/bin/python3 experiments/wayland-portal/gnome_approve.py xdg-desktop-portal-gnome 'Remote Desktop' Share
-for _ in $(seq 1 100); do grep -q 'ready and waiting' "$work/keyboard.log" && break; kill -0 "$keyboard_pid" || { cat "$work/keyboard.log"; exit 1; }; sleep .1; done
-grep -q 'ready and waiting' "$work/keyboard.log"
 echo '--- Start test target and verify actual click followed by actual stop ---'
 /usr/bin/python3 experiments/wayland-portal/sway_target.py "$work/received" >"$work/target.log" 2>&1 & target_pid=$!
 for _ in $(seq 1 100); do grep -q TARGET_READY "$work/target.log" && break; kill -0 "$target_pid" || { cat "$work/target.log"; exit 1; }; sleep .1; done
+touch "$XDG_RUNTIME_DIR/target-ready"
+for _ in $(seq 1 100); do [[ -f "$XDG_RUNTIME_DIR/pointer-ready" ]] && break; kill -0 "$keyboard_pid" || { cat "$work/keyboard.log"; exit 1; }; sleep .1; done
+[[ -f "$XDG_RUNTIME_DIR/pointer-ready" ]]
 /usr/bin/python3 experiments/wayland-portal/gnome_tauri_driver.py "$app_pid" "$work/received" "$XDG_RUNTIME_DIR/send-key"
 wait "$keyboard_pid"; keyboard_pid=''
 cat "$work/app.log" "$work/keyboard.log" "$work/target.log"

@@ -80,6 +80,26 @@ async fn probe() -> Result<()> {
                 .await?;
             tokio::time::sleep(Duration::from_millis(200)).await;
         }
+        if let Ok(target_ready) = env::var("WAYLAND_PROTOTYPE_TARGET_READY") {
+            let ready = Path::new(&target_ready);
+            let root = env::var("XDG_RUNTIME_DIR")?;
+            if !ready.starts_with(&root) {
+                return Err("Target marker must be inside isolated runtime".into());
+            }
+            tokio::time::timeout(Duration::from_secs(20), async {
+                while !ready.exists() {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await?;
+            remote
+                .notify_pointer_motion(&session, -10000.0, -10000.0)
+                .await?;
+            remote.notify_pointer_motion(&session, 400.0, 300.0).await?;
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            std::fs::write(Path::new(&root).join("pointer-ready"), b"ready")?;
+            println!("Positioned pointer in isolated 800x600 output");
+        }
         if let Ok(marker) = env::var("WAYLAND_PROTOTYPE_WAIT_FILE") {
             let path = Path::new(&marker);
             if !path.starts_with(env::var("XDG_RUNTIME_DIR")?) {
