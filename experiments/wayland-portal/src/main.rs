@@ -62,6 +62,14 @@ async fn probe() -> Result<()> {
         }
         tokio::time::sleep(Duration::from_millis(1200)).await;
         if env::var("WAYLAND_PROTOTYPE_WAIT_FILE").is_err() {
+            println!("Sending isolated Escape to dismiss any GNOME Overview");
+            remote
+                .notify_keyboard_keycode(&session, 1, KeyState::Pressed)
+                .await?;
+            remote
+                .notify_keyboard_keycode(&session, 1, KeyState::Released)
+                .await?;
+            tokio::time::sleep(Duration::from_millis(500)).await;
             println!("Sending one isolated ordinary A key for delivery diagnostics");
             remote
                 .notify_keyboard_keycode(&session, 30, KeyState::Pressed)
