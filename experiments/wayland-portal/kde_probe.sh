@@ -24,7 +24,7 @@ for _ in $(seq 1 60); do [[ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]] && break; 
 [[ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]] || { cat "$work/kwin.log"; exit 1; }
 dbus-update-activation-environment WAYLAND_DISPLAY XDG_RUNTIME_DIR XDG_SESSION_TYPE XDG_CURRENT_DESKTOP KDE_FULL_SESSION QT_QPA_PLATFORM QT_LINUX_ACCESSIBILITY_ALWAYS_ON NO_AT_BRIDGE
 pipewire >"$work/pipewire.log" 2>&1 & pipewire_pid=$!
-backend=$(dpkg -L xdg-desktop-portal-kde | rg '/xdg-desktop-portal-kde$' | head -1)
+backend=$(dpkg -L xdg-desktop-portal-kde | grep '/xdg-desktop-portal-kde$' | head -1)
 [[ -n "$backend" && -x "$backend" ]]
 "$backend" >"$work/backend.log" 2>&1 & backend_pid=$!
 for _ in $(seq 1 30); do
@@ -36,7 +36,7 @@ done
 [[ "${owner:-}" == '(true,)' ]] || { cat "$work/backend.log" "$work/kwin.log"; echo 'KDE portal backend did not acquire its bus name'; exit 1; }
 echo '--- xdg-desktop-portal interfaces ---'
 timeout 35s gdbus introspect --session --dest org.freedesktop.portal.Desktop --object-path /org/freedesktop/portal/desktop >"$work/interfaces" || { cat "$work/interfaces" "$work/kwin.log"; exit 1; }
-rg 'interface org.freedesktop.portal.(GlobalShortcuts|RemoteDesktop)' "$work/interfaces" || true
+grep -E 'interface org.freedesktop.portal.(GlobalShortcuts|RemoteDesktop)' "$work/interfaces" || true
 echo '--- Begin actual portal shortcut request: no pointer input enabled ---'
 unset WAYLAND_PROTOTYPE_ALLOW_SINGLE_CLICK
 experiments/wayland-portal/target/debug/wayland-portal-prototype >"$work/probe.log" 2>&1 & probe_pid=$!
