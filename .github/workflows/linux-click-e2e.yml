@@ -45,3 +45,33 @@ jobs:
 
       - name: Verify finite pause and UI stop on public app
         run: xvfb-run -a -s '-screen 0 1280x1024x24' dbus-run-session -- bash .github/scripts/public-pause-e2e/run.sh
+
+  wayland_guard:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install headless Wayland and accessibility dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y weston libwebkit2gtk-4.1-0 libxdo3 libayatana-appindicator3-1 libfuse2 dbus-x11 at-spi2-core python3-pyatspi libatk-adaptor
+      - name: Download and verify published AppImage
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          mkdir -p "$RUNNER_TEMP/published-app"
+          gh release download "$RELEASE_TAG" --pattern '*.AppImage' --dir "$RUNNER_TEMP/published-app"
+          cd "$RUNNER_TEMP/published-app"
+          shopt -s nullglob
+          files=(*.AppImage)
+          [[ ${#files[@]} == 1 ]]
+          expected=$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[] | select(.name | endswith(".AppImage")) | .digest')
+          [[ "$expected" == "sha256:$(sha256sum "${files[0]}" | cut -d' ' -f1)" ]]
+          chmod +x "${files[0]}"
+          "./${files[0]}" --appimage-extract >/dev/null
+          echo "APP_BINARY=$PWD/squashfs-root/AppRun" >> "$GITHUB_ENV"
+      - name: Verify unsupported Wayland fails closed
+        run: dbus-run-session -- bash .github/scripts/wayland-guard-e2e/run.sh
