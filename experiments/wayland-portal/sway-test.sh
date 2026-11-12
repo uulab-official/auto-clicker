@@ -18,9 +18,18 @@ mkdir -m 700 "$work/runtime"
 export XDG_RUNTIME_DIR="$work/runtime" WAYLAND_DISPLAY=wayland-ci XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=sway
 export WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman GDK_BACKEND=wayland
 unset DISPLAY
-printf 'output HEADLESS-1 resolution 800x600\n' >"$work/sway.conf"
+printf 'output HEADLESS-1 resolution 800x600\nxwayland disable\n' >"$work/sway.conf"
 sway -c "$work/sway.conf" >"$work/sway.log" 2>&1 & sway_pid=$!
-for _ in $(seq 1 30); do [[ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]] && break; kill -0 "$sway_pid" || { cat "$work/sway.log"; exit 1; }; sleep 1; done
+# Sway chooses its own socket name; create a known alias only inside this
+# isolated runtime directory so the probe's guard can verify its target.
+for _ in $(seq 1 30); do
+  [[ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]] && break
+  for socket in "$XDG_RUNTIME_DIR"/wayland-[0-9]*; do
+    if [[ -S "$socket" ]]; then ln -s "${socket##*/}" "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY"; break; fi
+  done
+  kill -0 "$sway_pid" || { cat "$work/sway.log"; exit 1; }
+  sleep 1
+done
 [[ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]] || { cat "$work/sway.log"; exit 1; }
 : > "$work/events"
 : > "$work/received"
