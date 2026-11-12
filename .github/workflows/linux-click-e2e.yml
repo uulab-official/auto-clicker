@@ -75,3 +75,23 @@ jobs:
           echo "APP_BINARY=$PWD/squashfs-root/AppRun" >> "$GITHUB_ENV"
       - name: Verify unsupported Wayland fails closed
         run: dbus-run-session -- bash .github/scripts/wayland-guard-e2e/run.sh
+
+  wayland_portal_prototype:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install private Wayland compositor and D-Bus test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y weston dbus-x11 python3-gi
+      - name: Build portal experiment and check safety gates
+        run: cargo test --manifest-path experiments/wayland-portal/Cargo.toml --locked
+      - name: Build standalone probe
+        run: cargo build --manifest-path experiments/wayland-portal/Cargo.toml --locked
+      - name: Exercise portal session, click, stop, revocation and denial with a mock portal
+        run: |
+          for mode in click stop revoked denied; do
+            dbus-run-session -- bash experiments/wayland-portal/mock-test.sh "$mode"
+          done
