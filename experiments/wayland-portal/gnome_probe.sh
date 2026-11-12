@@ -32,18 +32,18 @@ pipewire >"$work/pipewire.log" 2>&1 & pipewire_pid=$!
 echo '--- Actual GNOME desktop portal interfaces ---'
 timeout 35s gdbus introspect --session --dest org.freedesktop.portal.Desktop --object-path /org/freedesktop/portal/desktop >"$work/interfaces" || { cat "$work/shell.log"; exit 1; }
 grep -E 'interface org.freedesktop.portal.(GlobalShortcuts|RemoteDesktop)' "$work/interfaces" || true
-echo '--- Actual shortcut request: no pointer input enabled ---'
-experiments/wayland-portal/target/debug/wayland-portal-prototype >"$work/probe.log" 2>&1 & probe_pid=$!
-sleep 10
+echo '--- Approve actual GNOME shortcut in disposable desktop ---'
+WAYLAND_PROTOTYPE_WAIT_STOP=1 experiments/wayland-portal/target/debug/wayland-portal-prototype >"$work/probe.log" 2>&1 & probe_pid=$!
+/usr/bin/python3 experiments/wayland-portal/gnome_approve.py gnome-control-center-global-shortcuts-provider 'Add Keyboard Shortcuts' Add
+for _ in $(seq 1 50); do grep -q 'Portal assigned emergency stop' "$work/probe.log" && break; kill -0 "$probe_pid" || { cat "$work/probe.log"; exit 1; }; sleep .2; done
 cat "$work/probe.log"
-/usr/bin/python3 experiments/wayland-portal/list_accessible.py || true
-if kill -0 "$probe_pid" 2>/dev/null; then kill "$probe_pid"; wait "$probe_pid" || true; else wait "$probe_pid" || true; fi
+grep -q 'Portal assigned emergency stop' "$work/probe.log"
+echo '--- Approve one test keyboard session in disposable desktop ---'
+WAYLAND_PROTOTYPE_KEYBOARD_TEST=1 experiments/wayland-portal/target/debug/wayland-portal-prototype >"$work/keyboard.log" 2>&1 & keyboard_pid=$!
+/usr/bin/python3 experiments/wayland-portal/gnome_approve.py xdg-desktop-portal-gnome 'Remote Desktop' Share
+for _ in $(seq 1 50); do grep -q ACTUAL_SHORTCUT_ACTIVATED "$work/probe.log" && break; sleep .2; done
+cat "$work/keyboard.log" "$work/probe.log" "$work/shell.log"
+grep -q ACTUAL_SHORTCUT_ACTIVATED "$work/probe.log"
+wait "$keyboard_pid"
+wait "$probe_pid"
 probe_pid=''
-echo '--- Actual remote permission request: no pointer input enabled ---'
-WAYLAND_PROTOTYPE_REMOTE_PREFLIGHT=1 experiments/wayland-portal/target/debug/wayland-portal-prototype >"$work/remote.log" 2>&1 & probe_pid=$!
-sleep 10
-cat "$work/remote.log"
-/usr/bin/python3 experiments/wayland-portal/list_accessible.py || true
-if kill -0 "$probe_pid" 2>/dev/null; then kill "$probe_pid"; wait "$probe_pid" || true; else wait "$probe_pid" || true; fi
-probe_pid=''
-cat "$work/shell.log"

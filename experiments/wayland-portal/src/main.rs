@@ -40,6 +40,19 @@ async fn main() -> Result<()> {
 }
 
 async fn probe() -> Result<()> {
+    if env::var("WAYLAND_PROTOTYPE_KEYBOARD_TEST").as_deref() == Ok("1") {
+        let remote = RemoteDesktop::new().await?;
+        let session = remote.create_session().await?;
+        remote.select_devices(&session, DeviceType::Keyboard.into(), None, PersistMode::DoNot).await?.response()?;
+        println!("Requesting isolated keyboard permission");
+        let selected = remote.start(&session, None).await?.response()?;
+        if !selected.devices().contains(DeviceType::Keyboard) { return Err("Keyboard control was not granted".into()); }
+        println!("Isolated virtual keyboard granted; sending Ctrl+Shift+F8 once");
+        for key in [29, 42, 66] { remote.notify_keyboard_keycode(&session, key, KeyState::Pressed).await?; }
+        for key in [66, 42, 29] { remote.notify_keyboard_keycode(&session, key, KeyState::Released).await?; }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        return Ok(());
+    }
     if env::var("WAYLAND_PROTOTYPE_REMOTE_PREFLIGHT").as_deref() == Ok("1") {
         let remote = RemoteDesktop::new().await?;
         let control = remote.create_session().await?;
@@ -89,6 +102,15 @@ async fn probe() -> Result<()> {
         "Portal assigned emergency stop: {}",
         assigned.trigger_description()
     );
+    if env::var("WAYLAND_PROTOTYPE_WAIT_STOP").as_deref() == Ok("1") {
+        while let Some(signal) = activated.next().await {
+            if signal.session_handle().as_str() == expected_session && signal.shortcut_id() == STOP {
+                println!("ACTUAL_SHORTCUT_ACTIVATED");
+                return Ok(());
+            }
+        }
+        return Err("Shortcut event stream ended".into());
+    }
     gate.set_shortcut_bound(true);
 
     let remote = RemoteDesktop::new().await?;
