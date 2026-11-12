@@ -1,35 +1,46 @@
 #!/usr/bin/python3
 """Activate a named portal button only in the disposable CI desktop."""
 import os
+import subprocess
 import sys
 import time
-import pyatspi
 
 assert os.environ.get('GITHUB_ACTIONS') == 'true' and os.environ.get('CI') == 'true'
 assert os.environ.get('WAYLAND_DISPLAY') == 'wayland-ci'
-app_name, frame_name, button_name = sys.argv[1:]
+if '--once' not in sys.argv:
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        attempt = subprocess.run([sys.executable, __file__, '--once', *sys.argv[1:]], capture_output=True, text=True)
+        if attempt.returncode == 0:
+            print(attempt.stdout, flush=True)
+            sys.exit(0)
+        time.sleep(.3)
+    print(attempt.stdout + attempt.stderr, file=sys.stderr)
+    raise RuntimeError('Could not activate isolated portal dialog')
+
+import pyatspi
+app_name, frame_name, button_name = sys.argv[2:]
 def walk(node):
-    yield node
-    for child in node:
-        yield from walk(child)
-deadline = time.monotonic() + 30
-while time.monotonic() < deadline:
-    for app in pyatspi.Registry.getDesktop(0):
-        try:
-            if app.name != app_name:
-                continue
-            for frame in walk(app):
-                if frame.getRoleName() != 'frame' or frame.name != frame_name:
-                    continue
-                for node in walk(frame):
-                    if node.getRoleName() in ('button', 'push button') and node.name == button_name:
-                        if not node.getState().contains(pyatspi.STATE_ENABLED):
-                            continue
-                        action = node.queryAction()
-                        if any(action.doAction(i) for i in range(action.nActions)):
-                            print(f'Activated isolated {app_name}/{frame_name}/{button_name}', flush=True)
-                            sys.exit(0)
-        except (AttributeError, LookupError, RuntimeError, NotImplementedError):
+    try:
+        yield node
+        for child in node:
+            yield from walk(child)
+    except (AttributeError, LookupError, RuntimeError, NotImplementedError):
+        return
+for app in pyatspi.Registry.getDesktop(0):
+    try:
+        if app.name != app_name:
             continue
-    time.sleep(.2)
-raise RuntimeError(f'Could not activate {app_name}/{frame_name}/{button_name}')
+        for frame in walk(app):
+            if frame.getRoleName() != 'frame' or frame.name != frame_name:
+                continue
+            for node in walk(frame):
+                if node.getRoleName() in ('button', 'push button') and node.name == button_name:
+                    action = node.queryAction()
+                    print(f'Found isolated {app_name}/{frame_name}/{button_name}, enabled={node.getState().contains(pyatspi.STATE_ENABLED)}, actions={action.nActions}', flush=True)
+                    if any(action.doAction(i) for i in range(action.nActions)):
+                        print('Portal action dispatched', flush=True)
+                        sys.exit(0)
+    except (AttributeError, LookupError, RuntimeError, NotImplementedError):
+        continue
+sys.exit(1)
