@@ -55,6 +55,13 @@ for _ in $(seq 1 100); do grep -q TARGET_READY "$work/target.log" && break; kill
 touch "$XDG_RUNTIME_DIR/target-ready"
 for _ in $(seq 1 100); do [[ -f "$XDG_RUNTIME_DIR/pointer-ready" ]] && break; kill -0 "$keyboard_pid" || { cat "$work/keyboard.log"; exit 1; }; sleep .1; done
 [[ -f "$XDG_RUNTIME_DIR/pointer-ready" ]]
+if [[ "${GNOME_TEST_REVOKE:-}" == 1 ]]; then
+  /usr/bin/python3 experiments/wayland-portal/gnome_revoke_driver.py "$app_pid" "$work/received" "$work/app.log"
+  kill "$keyboard_pid" 2>/dev/null || true
+  wait "$keyboard_pid" || true; keyboard_pid=''
+  cat "$work/app.log" "$work/keyboard.log" "$work/target.log"
+  exit 0
+fi
 /usr/bin/python3 experiments/wayland-portal/gnome_tauri_driver.py "$app_pid" "$work/received" "$XDG_RUNTIME_DIR/send-key"
 wait "$keyboard_pid"; keyboard_pid=''
 cat "$work/app.log" "$work/keyboard.log" "$work/target.log"

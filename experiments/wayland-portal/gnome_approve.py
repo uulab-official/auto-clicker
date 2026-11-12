@@ -31,6 +31,14 @@ for app in pyatspi.Registry.getDesktop(0):
     try:
         if app.name != app_name:
             continue
+        if frame_name == '--shell':
+            for node in walk(app):
+                if node.getRoleName() in ('button', 'push button') and node.name == button_name and node.getState().contains(pyatspi.STATE_SHOWING):
+                    action = node.queryAction()
+                    if any(action.doAction(i) for i in range(action.nActions)):
+                        print(f'Activated isolated GNOME Shell {button_name}', flush=True)
+                        sys.exit(0)
+            continue
         for frame in walk(app):
             if frame.getRoleName() != 'frame' or frame.name != frame_name:
                 continue
