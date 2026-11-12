@@ -59,3 +59,6 @@ wait "$keyboard_pid"; keyboard_pid=''
 cat "$work/app.log" "$work/keyboard.log" "$work/target.log"
 grep -q 'CI Wayland app window hidden' "$work/app.log"
 grep -q 'CI Wayland window restore requested' "$work/app.log"
+grep -q 'CI Wayland window visibility after restore: Ok(true)' "$work/app.log"
+grep -q 'CI observed emergency shortcut activation' "$work/app.log"
+grep -q 'CI Wayland run result: Ok(())' "$work/app.log"

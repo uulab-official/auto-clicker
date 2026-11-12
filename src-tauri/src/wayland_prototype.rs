@@ -137,7 +137,10 @@ async fn run_shortcut(app: &tauri::AppHandle) -> Result<(), String> {
         tokio::select! {
             biased;
             event = activated.next() => match event {
-                Some(event) if event.session_handle().as_str() == session_path && event.shortcut_id() == STOP_ID => stop(app),
+                Some(event) if event.session_handle().as_str() == session_path && event.shortcut_id() == STOP_ID => {
+                    eprintln!("CI observed emergency shortcut activation");
+                    stop(app);
+                },
                 Some(_) => {},
                 None => return Err("Shortcut event stream ended".into()),
             },
@@ -161,6 +164,7 @@ impl Drop for RestoreWindow {
     fn drop(&mut self) {
         let _ = self.0.show();
         eprintln!("CI Wayland window restore requested");
+        eprintln!("CI Wayland window visibility after restore: {:?}", self.0.is_visible());
     }
 }
 
@@ -199,6 +203,7 @@ pub fn spawn_run(app: tauri::AppHandle, config: Config, cancel: Arc<AtomicBool>)
     });
     tauri::async_runtime::spawn(async move {
         let result = run(&app, &config, &cancel).await;
+        eprintln!("CI Wayland run result: {result:?}");
         finished.store(true, Ordering::Release);
         let state = app.state::<AppState>();
         if let Ok(mut inner) = state.0.lock() {
