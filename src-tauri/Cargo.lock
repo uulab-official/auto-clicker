@@ -81,6 +81,7 @@ name = "auto-clicker"
 version = "0.1.13"
 dependencies = [
  "enigo",
+ "raw-window-handle",
  "serde",
  "serde_json",
  "tauri",
@@ -89,6 +90,7 @@ dependencies = [
  "tauri-plugin-fs",
  "tauri-plugin-global-shortcut",
  "tauri-plugin-updater",
+ "x11rb",
 ]
 
 [[package]]

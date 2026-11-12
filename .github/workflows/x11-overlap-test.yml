@@ -1,0 +1,25 @@
+name: X11 overlap regression
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install X11 and build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev xvfb xdotool dbus-x11 at-spi2-core python3-pyatspi python3-tk libatk-adaptor
+      - run: npm ci
+      - name: Test X11 topmost hit detection against Xvfb
+        run: xvfb-run -a env X11_HIT_TEST_REQUIRED=1 cargo test --manifest-path src-tauri/Cargo.toml --locked overlapping_client_and_window_manager_frame -- --nocapture
+      - run: npm run tauri build -- --no-bundle
+      - name: Test actual overlap, stop and self-protection
+        run: xvfb-run -a -s '-screen 0 1280x1024x24' dbus-run-session -- bash .github/scripts/x11-overlap-test.sh
