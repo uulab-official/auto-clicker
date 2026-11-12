@@ -37,6 +37,7 @@ def until(predicate, seconds=30):
 start = until(start_button)
 action = start.queryAction()
 assert any(action.doAction(i) for i in range(action.nActions)), 'Could not start the app'
+subprocess.run(['/usr/bin/python3', 'experiments/wayland-portal/gnome_approve.py', 'xdg-desktop-portal-gnome', 'Remote Desktop', '--enable-remote'], check=True)
 subprocess.run(['/usr/bin/python3', 'experiments/wayland-portal/gnome_approve.py', 'xdg-desktop-portal-gnome', 'Remote Desktop', 'Share'], check=True)
 until(lambda: received.exists() and received.stat().st_size > 0)
 marker.touch()

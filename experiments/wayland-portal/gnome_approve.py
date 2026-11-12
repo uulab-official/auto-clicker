@@ -34,6 +34,19 @@ for app in pyatspi.Registry.getDesktop(0):
         for frame in walk(app):
             if frame.getRoleName() != 'frame' or frame.name != frame_name:
                 continue
+            if button_name == '--enable-remote':
+                switches = [node for node in walk(frame) if node.getRoleName() == 'switch' and node.name == 'Allow Remote Interaction']
+                for switch in reversed(switches):
+                    try:
+                        if switch.getState().contains(pyatspi.STATE_CHECKED):
+                            print('Isolated remote interaction is already enabled', flush=True)
+                            sys.exit(0)
+                        action = switch.queryAction()
+                        if any(action.doAction(i) for i in range(action.nActions)):
+                            print('Enabled isolated remote interaction', flush=True)
+                            sys.exit(0)
+                    except (AttributeError, LookupError, RuntimeError, NotImplementedError):
+                        continue
             for node in walk(frame):
                 if node.getRoleName() in ('button', 'push button') and node.name == button_name:
                     action = node.queryAction()

@@ -47,6 +47,7 @@ sleep 5
 echo '--- Prepare isolated virtual keyboard ---'
 WAYLAND_PROTOTYPE_WAIT_FILE="$XDG_RUNTIME_DIR/send-key" WAYLAND_PROTOTYPE_KEYBOARD_TEST=1 experiments/wayland-portal/target/debug/wayland-portal-prototype >"$work/keyboard.log" 2>&1 & keyboard_pid=$!
 sleep 5
+/usr/bin/python3 experiments/wayland-portal/gnome_approve.py xdg-desktop-portal-gnome 'Remote Desktop' --enable-remote
 /usr/bin/python3 experiments/wayland-portal/gnome_approve.py xdg-desktop-portal-gnome 'Remote Desktop' Share
 for _ in $(seq 1 100); do grep -q 'ready and waiting' "$work/keyboard.log" && break; kill -0 "$keyboard_pid" || { cat "$work/keyboard.log"; exit 1; }; sleep .1; done
 grep -q 'ready and waiting' "$work/keyboard.log"

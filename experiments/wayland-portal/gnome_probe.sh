@@ -49,6 +49,7 @@ grep -q 'Portal assigned emergency stop' "$work/probe.log"
 echo '--- Approve one test keyboard session in disposable desktop ---'
 WAYLAND_PROTOTYPE_KEYBOARD_TEST=1 experiments/wayland-portal/target/debug/wayland-portal-prototype >"$work/keyboard.log" 2>&1 & keyboard_pid=$!
 sleep 5
+/usr/bin/python3 experiments/wayland-portal/gnome_approve.py xdg-desktop-portal-gnome 'Remote Desktop' --enable-remote
 /usr/bin/python3 experiments/wayland-portal/gnome_approve.py xdg-desktop-portal-gnome 'Remote Desktop' Share
 for _ in $(seq 1 50); do grep -q ACTUAL_SHORTCUT_ACTIVATED "$work/probe.log" && break; sleep .2; done
 cat "$work/keyboard.log" "$work/probe.log" "$work/shell.log"
