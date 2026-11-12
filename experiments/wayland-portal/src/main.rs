@@ -60,6 +60,18 @@ async fn probe() -> Result<()> {
         if selected.devices().contains(DeviceType::Pointer) {
             remote.notify_pointer_motion(&session, 150.0, 150.0).await?;
         }
+        tokio::time::sleep(Duration::from_millis(1200)).await;
+        if env::var("WAYLAND_PROTOTYPE_WAIT_FILE").is_err() {
+            println!("Sending one isolated ordinary A key for delivery diagnostics");
+            remote
+                .notify_keyboard_keycode(&session, 30, KeyState::Pressed)
+                .await?;
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            remote
+                .notify_keyboard_keycode(&session, 30, KeyState::Released)
+                .await?;
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
         if let Ok(marker) = env::var("WAYLAND_PROTOTYPE_WAIT_FILE") {
             let path = Path::new(&marker);
             if !path.starts_with(env::var("XDG_RUNTIME_DIR")?) {
@@ -78,11 +90,13 @@ async fn probe() -> Result<()> {
             remote
                 .notify_keyboard_keycode(&session, key, KeyState::Pressed)
                 .await?;
+            tokio::time::sleep(Duration::from_millis(80)).await;
         }
         for key in [66, 42, 29] {
             remote
                 .notify_keyboard_keycode(&session, key, KeyState::Released)
                 .await?;
+            tokio::time::sleep(Duration::from_millis(80)).await;
         }
         tokio::time::sleep(Duration::from_secs(2)).await;
         return Ok(());

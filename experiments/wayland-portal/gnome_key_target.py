@@ -13,6 +13,8 @@ def on_key(_window, event):
     return False
 window.connect('key-press-event', on_key)
 window.connect('key-release-event', on_key)
+window.connect('focus-in-event', lambda *_: print('TARGET_FOCUS_IN', flush=True))
+window.connect('focus-out-event', lambda *_: print('TARGET_FOCUS_OUT', flush=True))
 window.connect('destroy', Gtk.main_quit)
 window.show_all()
 window.present()
