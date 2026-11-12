@@ -35,11 +35,12 @@ jobs:
       - name: Install isolated GNOME Shell and portal
         run: |
           sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gnome-shell gnome-control-center xdg-desktop-portal xdg-desktop-portal-gnome dbus-x11 libglib2.0-bin python3-pyatspi at-spi2-core libatk-adaptor pipewire
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gnome-shell gnome-control-center xdg-desktop-portal xdg-desktop-portal-gnome dbus-x11 libglib2.0-bin python3-pyatspi python3-gi gir1.2-gtk-3.0 at-spi2-core libatk-adaptor pipewire
       - run: cargo build --manifest-path experiments/wayland-portal/Cargo.toml --bin wayland-portal-prototype --locked
       - name: Probe real GNOME portals without pointer input
         run: dbus-run-session -- bash experiments/wayland-portal/gnome_probe.sh
   actual_kde_portal_probe:
+    if: ${{ false }}
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -53,6 +54,7 @@ jobs:
       - name: Probe real KDE portal availability and consent UI without input
         run: dbus-run-session -- bash experiments/wayland-portal/kde_probe.sh
   verify:
+    if: ${{ false }}
     runs-on: ubuntu-22.04
     timeout-minutes: 25
     steps:

@@ -2,9 +2,10 @@
 set -euo pipefail
 [[ "${GITHUB_ACTIONS:-}" == true && "${CI:-}" == true && -n "${RUNNER_TEMP:-}" ]] || exit 1
 work=$(mktemp -d "$RUNNER_TEMP/gnome-portal.XXXXXX")
-shell_pid='' probe_pid='' pipewire_pid='' keyboard_pid=''
-trap 'cat "$work/probe.log" "$work/keyboard.log" "$work/shell.log" 2>/dev/null || true; /usr/bin/python3 experiments/wayland-portal/list_accessible.py || true' ERR
+shell_pid='' probe_pid='' pipewire_pid='' keyboard_pid='' target_pid=''
+trap 'cat "$work/probe.log" "$work/keyboard.log" "$work/target.log" "$work/shell.log" 2>/dev/null || true; /usr/bin/python3 experiments/wayland-portal/list_accessible.py || true' ERR
 cleanup() {
+  [[ -z "$target_pid" ]] || kill "$target_pid" 2>/dev/null || true
   [[ -z "$keyboard_pid" ]] || kill "$keyboard_pid" 2>/dev/null || true
   [[ -z "$probe_pid" ]] || kill "$probe_pid" 2>/dev/null || true
   [[ -z "$pipewire_pid" ]] || kill "$pipewire_pid" 2>/dev/null || true
@@ -46,13 +47,15 @@ sleep 5
 for _ in $(seq 1 50); do grep -q 'Portal assigned emergency stop' "$work/probe.log" && break; kill -0 "$probe_pid" || { cat "$work/probe.log"; exit 1; }; sleep .2; done
 cat "$work/probe.log"
 grep -q 'Portal assigned emergency stop' "$work/probe.log"
+/usr/bin/python3 experiments/wayland-portal/gnome_key_target.py >"$work/target.log" 2>&1 & target_pid=$!
+for _ in $(seq 1 50); do grep -q KEY_TARGET_READY "$work/target.log" && break; kill -0 "$target_pid" || { cat "$work/target.log"; exit 1; }; sleep .1; done
 echo '--- Approve one test keyboard session in disposable desktop ---'
 WAYLAND_PROTOTYPE_KEYBOARD_TEST=1 experiments/wayland-portal/target/debug/wayland-portal-prototype >"$work/keyboard.log" 2>&1 & keyboard_pid=$!
 sleep 5
 /usr/bin/python3 experiments/wayland-portal/gnome_approve.py xdg-desktop-portal-gnome 'Remote Desktop' --enable-remote
 /usr/bin/python3 experiments/wayland-portal/gnome_approve.py xdg-desktop-portal-gnome 'Remote Desktop' Share
 for _ in $(seq 1 50); do grep -q ACTUAL_SHORTCUT_ACTIVATED "$work/probe.log" && break; sleep .2; done
-cat "$work/keyboard.log" "$work/probe.log" "$work/shell.log"
+cat "$work/keyboard.log" "$work/probe.log" "$work/target.log" "$work/shell.log"
 grep -q ACTUAL_SHORTCUT_ACTIVATED "$work/probe.log"
 wait "$keyboard_pid"
 keyboard_pid=''
