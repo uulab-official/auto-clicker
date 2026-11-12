@@ -1,5 +1,7 @@
 mod engine;
 #[cfg(target_os = "linux")]
+mod wayland_prototype;
+#[cfg(target_os = "linux")]
 mod x11_hit_test;
 
 use engine::{Config, MouseButton, Position, Step};
@@ -436,6 +438,10 @@ fn execute(
 }
 fn start(app: &tauri::AppHandle, config: Config) -> Result<(), String> {
     engine::validate(&config)?;
+    #[cfg(target_os = "linux")]
+    if wayland_prototype::isolated_ci_only() {
+        wayland_prototype::validate_config(&config)?;
+    }
     let state = app.state::<AppState>();
     let mut inner = state.0.lock().map_err(|_| "State unavailable")?;
     if inner.status.running {
@@ -458,6 +464,11 @@ fn start(app: &tauri::AppHandle, config: Config) -> Result<(), String> {
     let status = inner.status.clone();
     drop(inner);
     emit_status(app, status);
+    #[cfg(target_os = "linux")]
+    if wayland_prototype::isolated_ci_only() {
+        wayland_prototype::spawn_run(app.clone(), config, cancel);
+        return Ok(());
+    }
     let app = app.clone();
     std::thread::spawn(move || {
         let result = (|| {
@@ -581,6 +592,10 @@ fn get_status(state: tauri::State<'_, AppState>) -> Result<Status, String> {
 }
 #[tauri::command]
 fn cursor_position() -> Result<Position, String> {
+    #[cfg(target_os = "linux")]
+    if wayland_prototype::isolated_ci_only() {
+        return Err("Pointer position capture is unavailable in this Wayland experiment.".into());
+    }
     let enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
     let (x, y) = enigo.location().map_err(|e| e.to_string())?;
     Ok(Position { x, y })
@@ -613,11 +628,15 @@ pub fn run() {
             );
             #[cfg(not(target_os = "linux"))]
             let unsafe_session = false;
+            #[cfg(target_os = "linux")]
+            let experimental = unsafe_session && wayland_prototype::isolated_ci_only();
+            #[cfg(not(target_os = "linux"))]
+            let experimental = false;
 
             let registration = if unsafe_session {
                 ShortcutRegistration {
                     available: Vec::new(),
-                    error: Some("Wayland global emergency shortcuts are not supported. Sign in to an X11 session to run the clicker.".to_string()),
+                    error: Some(if experimental { "Preparing experimental Wayland emergency shortcut." } else { "Wayland global emergency shortcuts are not supported. Sign in to an X11 session to run the clicker." }.to_string()),
                     warning: None,
                 }
             } else {
@@ -646,6 +665,10 @@ pub fn run() {
                 inner.status.shortcut_error = registration.error;
                 inner.status.shortcut_warning = registration.warning;
                 inner.status.available_shortcuts = registration.available;
+            }
+            #[cfg(target_os = "linux")]
+            if experimental {
+                wayland_prototype::initialize_shortcut(app.handle().clone());
             }
             Ok(())
         })
