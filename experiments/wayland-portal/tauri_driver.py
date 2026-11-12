@@ -10,6 +10,8 @@ import pyatspi
 pid, target_file, mode = int(sys.argv[1]), pathlib.Path(sys.argv[2]), sys.argv[3]
 
 def walk(node):
+    if node is None:
+        return
     yield node
     for child in node:
         yield from walk(child)
@@ -23,7 +25,7 @@ def button(name, enabled=True):
                 if node.getRoleName() in ('button', 'push button') and node.name == name:
                     if not enabled or node.getState().contains(pyatspi.STATE_ENABLED):
                         return node
-        except (LookupError, RuntimeError, NotImplementedError):
+        except (AttributeError, LookupError, RuntimeError, NotImplementedError):
             continue
     return None
 
