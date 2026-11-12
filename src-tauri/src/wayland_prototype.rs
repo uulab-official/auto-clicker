@@ -73,6 +73,10 @@ pub fn initialize_shortcut(app: tauri::AppHandle) {
 
 async fn run_shortcut(app: &tauri::AppHandle) -> Result<(), String> {
     let portal = GlobalShortcuts::new().await.map_err(|e| e.to_string())?;
+    let registry = zbus::Proxy::new(portal.connection(), "org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop", "org.freedesktop.host.portal.Registry").await.map_err(|e| e.to_string())?;
+    let options: std::collections::HashMap<&str, zbus::zvariant::Value<'_>> = std::collections::HashMap::new();
+    let registered: Result<(), _> = registry.call("Register", &("kr.co.uulab.autoclicker", &options)).await;
+    eprintln!("CI host portal registration: {registered:?}");
     let session = portal.create_session().await.map_err(|e| e.to_string())?;
     let session_path: String =
         serde_json::from_value(serde_json::to_value(&session).map_err(|e| e.to_string())?)
