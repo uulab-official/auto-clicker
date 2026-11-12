@@ -74,6 +74,24 @@ pub fn initialize_shortcut(app: tauri::AppHandle) {
 async fn run_shortcut(app: &tauri::AppHandle) -> Result<(), String> {
     let portal = GlobalShortcuts::new().await.map_err(|e| e.to_string())?;
     let session = portal.create_session().await.map_err(|e| e.to_string())?;
+    let session_path: String =
+        serde_json::from_value(serde_json::to_value(&session).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+    let session_proxy = zbus::Proxy::new(
+        portal.connection(),
+        "org.freedesktop.portal.Desktop",
+        session_path.as_str(),
+        "org.freedesktop.portal.Session",
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    let bus = zbus::fdo::DBusProxy::new(portal.connection())
+        .await
+        .map_err(|e| e.to_string())?;
+    let owner_changes = bus
+        .receive_name_owner_changed_with_args(&[(0, "org.freedesktop.portal.Desktop")])
+        .await
+        .map_err(|e| e.to_string())?;
     let activated = portal
         .receive_activated()
         .await
@@ -82,11 +100,13 @@ async fn run_shortcut(app: &tauri::AppHandle) -> Result<(), String> {
         .receive_shortcuts_changed()
         .await
         .map_err(|e| e.to_string())?;
-    let closed = session.receive_closed().await.map_err(|e| e.to_string())?;
-    tokio::pin!(activated, changed, closed);
-    let session_path: String =
-        serde_json::from_value(serde_json::to_value(&session).map_err(|e| e.to_string())?)
-            .map_err(|e| e.to_string())?;
+    // Read the raw signal. The portal specifies an a{sv} details body; a
+    // typed unit stream may silently discard it during deserialization.
+    let closed = session_proxy
+        .receive_signal("Closed")
+        .await
+        .map_err(|e| e.to_string())?;
+    tokio::pin!(activated, changed, closed, owner_changes);
     let requested =
         [NewShortcut::new(STOP_ID, "Emergency stop").preferred_trigger(Some("CTRL+SHIFT+F8"))];
     let response = portal
@@ -127,6 +147,7 @@ async fn run_shortcut(app: &tauri::AppHandle) -> Result<(), String> {
                 None => return Err("Shortcut update stream ended".into()),
             },
             _ = closed.next() => return Err("Shortcut portal session closed".into()),
+            _ = owner_changes.next() => return Err("Desktop portal service disconnected or changed owner".into()),
         }
     }
 }
@@ -188,7 +209,21 @@ async fn run(app: &tauri::AppHandle, config: &Config, cancel: &AtomicBool) -> Re
     let portal = RemoteDesktop::new().await.map_err(|e| e.to_string())?;
     let session = portal.create_session().await.map_err(|e| e.to_string())?;
     eprintln!("CI remote session: {:?}", serde_json::to_value(&session));
-    let closed = session.receive_closed().await.map_err(|e| e.to_string())?;
+    let session_path: String =
+        serde_json::from_value(serde_json::to_value(&session).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+    let session_proxy = zbus::Proxy::new(
+        portal.connection(),
+        "org.freedesktop.portal.Desktop",
+        session_path.as_str(),
+        "org.freedesktop.portal.Session",
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    let closed = session_proxy
+        .receive_signal("Closed")
+        .await
+        .map_err(|e| e.to_string())?;
     tokio::pin!(closed);
     portal
         .select_devices(

@@ -6,7 +6,7 @@ import sys
 from gi.repository import Gio, GLib
 
 mode, output = sys.argv[1:]
-assert mode in ('click', 'stop', 'revoked', 'denied', 'loop_stop', 'remote_closed')
+assert mode in ('click', 'stop', 'revoked', 'denied', 'loop_stop', 'remote_closed', 'shortcut_closed', 'service_loss')
 assert os.environ.get('GITHUB_ACTIONS') == 'true'
 ROOT = '/org/freedesktop/portal/desktop'
 XML = '''<node>
@@ -60,10 +60,12 @@ def stop_later(sender):
         print(f'MOCK_SIGNAL mode={mode} shortcut={state["shortcut"]} remote={state["remote"]} sender={sender}', flush=True)
         if mode in ('stop', 'loop_stop'):
             connection.emit_signal(sender, ROOT, 'org.freedesktop.portal.GlobalShortcuts', 'Activated', GLib.Variant('(osta{sv})', (state['shortcut'], 'emergency-stop', 1, {})))
-        elif mode == 'revoked':
+        elif mode in ('revoked', 'shortcut_closed'):
             connection.emit_signal(sender, state['shortcut'], 'org.freedesktop.portal.Session', 'Closed', GLib.Variant('(a{sv})', ({},)))
         elif mode == 'remote_closed':
             connection.emit_signal(sender, state['remote'], 'org.freedesktop.portal.Session', 'Closed', GLib.Variant('(a{sv})', ({},)))
+        elif mode == 'service_loss':
+            connection.close_sync(None)
         return False
     GLib.timeout_add(300, fire)
 
@@ -100,7 +102,7 @@ def method(_conn, sender, path, iface, method_name, params, invocation):
         values = {'shortcuts': GLib.Variant('a(sa{sv})', shortcuts)}
     elif method_name == 'Start':
         values = {'devices': GLib.Variant('u', 2)}
-        if mode in ('stop', 'revoked', 'remote_closed'):
+        if mode in ('stop', 'revoked', 'remote_closed', 'shortcut_closed', 'service_loss'):
             stop_later(sender)
     invocation.return_value(GLib.Variant('(o)', (request,)))
     reply_later(sender, request, code, values)

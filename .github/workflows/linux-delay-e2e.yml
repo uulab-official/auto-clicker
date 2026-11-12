@@ -30,6 +30,6 @@ jobs:
       - run: cargo build --manifest-path experiments/wayland-portal/Cargo.toml --locked
       - name: Verify Tauri window hide, mock emergency stop and portal loss on Sway
         run: |
-          for mode in loop_stop remote_closed; do
+          for mode in loop_stop remote_closed shortcut_closed service_loss; do
             dbus-run-session -- bash experiments/wayland-portal/tauri_sway_test.sh "$mode"
           done

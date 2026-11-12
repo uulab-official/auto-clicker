@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 [[ "${GITHUB_ACTIONS:-}" == true && "${CI:-}" == true && -n "${RUNNER_TEMP:-}" ]] || exit 1
-mode=${1:?loop_stop or remote_closed}
-[[ "$mode" == loop_stop || "$mode" == remote_closed ]] || exit 1
+mode=${1:?loop_stop, remote_closed, shortcut_closed or service_loss}
+[[ "$mode" == loop_stop || "$mode" == remote_closed || "$mode" == shortcut_closed || "$mode" == service_loss ]] || exit 1
 work=$(mktemp -d "$RUNNER_TEMP/tauri-sway.XXXXXX")
 sway_pid='' mock_pid='' target_pid='' app_pid=''
 trap 'cat "$work/app.log" "$work/mock.log" "$work/target.log" "$work/sway.log" 2>/dev/null || true' ERR

@@ -52,12 +52,12 @@ assert any(action.doAction(i) for i in range(action.nActions)), 'Start could not
 until(lambda: not visible())
 print('Tauri window unmapped before clicking', flush=True)
 until(visible)
-until(lambda: button('Start clicking'))
+until(lambda: button('Start clicking', enabled=mode not in ('shortcut_closed', 'service_loss')))
 print('Tauri window restored after stop or portal loss', flush=True)
 time.sleep(2)
 events = target_file.read_text().splitlines()
 if mode == 'loop_stop' and len(events) != 1:
     raise RuntimeError(f'Expected one click before stop; got {events}')
-if mode == 'remote_closed' and events:
+if mode in ('remote_closed', 'shortcut_closed', 'service_loss') and events:
     raise RuntimeError(f'Unexpected click after portal closure: {events}')
 print(f'Isolated Tauri target observed {len(events)} clicks for {mode}', flush=True)

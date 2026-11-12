@@ -145,6 +145,7 @@ dependencies = [
  "tauri-plugin-updater",
  "tokio",
  "x11rb",
+ "zbus",
 ]
 
 [[package]]
