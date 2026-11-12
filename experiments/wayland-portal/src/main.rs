@@ -40,6 +40,15 @@ async fn main() -> Result<()> {
 }
 
 async fn probe() -> Result<()> {
+    if env::var("WAYLAND_PROTOTYPE_REMOTE_PREFLIGHT").as_deref() == Ok("1") {
+        let remote = RemoteDesktop::new().await?;
+        let control = remote.create_session().await?;
+        remote.select_devices(&control, DeviceType::Pointer.into(), None, PersistMode::DoNot).await?.response()?;
+        println!("Requesting pointer permission from the actual portal; no pointer events will be sent");
+        let selected = remote.start(&control, None).await?.response()?;
+        println!("Actual portal returned devices: {:?}", selected.devices());
+        return Ok(());
+    }
     let mut gate = SafetyGate::default();
     let shortcut_portal = GlobalShortcuts::new().await?;
     // Unsandboxed apps may need to associate this D-Bus connection with a

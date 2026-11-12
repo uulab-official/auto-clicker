@@ -25,6 +25,7 @@ EOF
 export XDG_RUNTIME_DIR="$work/runtime" XDG_DATA_HOME="$work/data" XDG_CONFIG_HOME="$work/config" XDG_CACHE_HOME="$work/cache"
 export WAYLAND_DISPLAY=wayland-ci XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=KDE KDE_FULL_SESSION=true
 export QT_QPA_PLATFORM=wayland QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1 NO_AT_BRIDGE=0 GTK_MODULES=atk-bridge LANG=C.UTF-8
+export QT_LOGGING_RULES='xdp-kde-GlobalShortcuts.debug=true;xdp-kde-Session.debug=true'
 unset DISPLAY
 kwin_wayland --virtual --socket="$WAYLAND_DISPLAY" --width=800 --height=600 --no-lockscreen >"$work/kwin.log" 2>&1 & kwin_pid=$!
 for _ in $(seq 1 60); do [[ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]] && break; kill -0 "$kwin_pid" || { cat "$work/kwin.log"; exit 1; }; sleep 1; done
@@ -54,4 +55,13 @@ sleep 17
 cat "$work/probe.log"
 if kill -0 "$probe_pid" 2>/dev/null; then echo 'Portal request pending; inspecting permission dialog accessibility'; else wait "$probe_pid" || true; probe_pid=''; fi
 /usr/bin/python3 experiments/wayland-portal/list_accessible.py || true
+echo '--- Begin actual remote-control permission request: no pointer input enabled ---'
+WAYLAND_PROTOTYPE_REMOTE_PREFLIGHT=1 experiments/wayland-portal/target/debug/wayland-portal-prototype >"$work/remote.log" 2>&1 & probe_pid=$!
+sleep 5
+/usr/bin/python3 experiments/wayland-portal/list_accessible.py || true
+cat "$work/remote.log"
+if kill -0 "$probe_pid" 2>/dev/null; then echo 'Remote permission request remains pending'; kill "$probe_pid"; wait "$probe_pid" || true; else wait "$probe_pid" || true; fi
+probe_pid=''
+echo '--- KDE portal backend diagnostics ---'
+cat "$work/backend.log"
 cat "$work/kwin.log"
