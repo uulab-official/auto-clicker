@@ -27,6 +27,13 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 [[ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]]
+for _ in $(seq 1 30); do
+  for socket in "$XDG_RUNTIME_DIR"/sway-ipc.*.sock; do [[ ! -S "$socket" ]] || { export SWAYSOCK="$socket"; break; }; done
+  [[ -z "${SWAYSOCK:-}" ]] || break
+  kill -0 "$sway_pid" || { cat "$work/sway.log"; exit 1; }
+  sleep 1
+done
+[[ -n "${SWAYSOCK:-}" && -S "$SWAYSOCK" ]]
 dbus-update-activation-environment WAYLAND_DISPLAY XDG_RUNTIME_DIR XDG_SESSION_TYPE XDG_CURRENT_DESKTOP GDK_BACKEND GTK_MODULES NO_AT_BRIDGE
 : > "$work/events"; : > "$work/received"
 /usr/bin/python3 experiments/wayland-portal/sway_target.py "$work/received" >"$work/target.log" 2>&1 & target_pid=$!
