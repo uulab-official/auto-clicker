@@ -3,7 +3,12 @@ set -euo pipefail
 [[ "${CI:-}" == true && "${GITHUB_ACTIONS:-}" == true ]] || exit 1
 work=$(mktemp -d)
 weston_pid='' app_pid=''
-cleanup() { [[ -z "$app_pid" ]] || kill "$app_pid" 2>/dev/null || true; [[ -z "$weston_pid" ]] || kill "$weston_pid" 2>/dev/null || true; rm -rf "$work"; }
+cleanup() {
+  [[ -z "$app_pid" ]] || kill "$app_pid" 2>/dev/null || true
+  [[ -z "$weston_pid" ]] || kill "$weston_pid" 2>/dev/null || true
+  if mountpoint -q "$work/runtime/doc"; then fusermount -u "$work/runtime/doc" || true; fi
+  rm -rf "$work" || true
+}
 trap cleanup EXIT
 mkdir -p "$work/runtime" "$work/data" "$work/config" "$work/cache"
 chmod 700 "$work/runtime"
