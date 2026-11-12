@@ -1187,6 +1187,7 @@ dependencies = [
  "futures-util",
  "serde_json",
  "tokio",
+ "zbus",
 ]
 
 [[package]]

@@ -42,6 +42,21 @@ async fn main() -> Result<()> {
 async fn probe() -> Result<()> {
     let mut gate = SafetyGate::default();
     let shortcut_portal = GlobalShortcuts::new().await?;
+    // Unsandboxed apps may need to associate this D-Bus connection with a
+    // matching installed desktop file. Older portal versions lack Registry.
+    let registry = zbus::Proxy::new(
+        shortcut_portal.connection(),
+        "org.freedesktop.portal.Desktop",
+        "/org/freedesktop/portal/desktop",
+        "org.freedesktop.host.portal.Registry",
+    )
+    .await?;
+    let options: std::collections::HashMap<&str, zbus::zvariant::Value<'_>> =
+        std::collections::HashMap::new();
+    let registered: std::result::Result<(), _> = registry
+        .call("Register", &("kr.co.uulab.autoclicker", &options))
+        .await;
+    println!("Host application registration result: {:?}", registered);
     let shortcuts = shortcut_portal.create_session().await?;
     // Signals are subscribed before binding so a revocation cannot be missed.
     let activated = shortcut_portal.receive_activated().await?;
@@ -55,6 +70,7 @@ async fn probe() -> Result<()> {
         .bind_shortcuts(&shortcuts, &requested, None)
         .await?
         .response()?;
+    println!("Portal returned shortcut bindings: {:?}", bound.shortcuts());
     let assigned = bound
         .shortcuts()
         .iter()
