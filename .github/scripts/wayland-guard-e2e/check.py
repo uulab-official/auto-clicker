@@ -19,6 +19,12 @@ while time.monotonic() < deadline:
                 node = stack.pop()
                 if 'Wayland global emergency shortcuts are not supported' in (node.name or ''):
                     wayland_warning = True
+                try:
+                    text = node.queryText()
+                    if 'Wayland global emergency shortcuts are not supported' in text.getText(0, -1):
+                        wayland_warning = True
+                except (AttributeError, LookupError, RuntimeError, NotImplementedError):
+                    pass
                 if node.name == 'Start clicking' and node.getRoleName() in ('push button', 'button'):
                     if not node.getState().contains(pyatspi.STATE_ENABLED):
                         disabled_start = True
@@ -40,7 +46,13 @@ for app in pyatspi.Registry.getDesktop(0):
         while stack:
             node = stack.pop()
             if node.name:
-                print(f'  {node.getRoleName()}: {node.name!r}', flush=True)
+                print(f'  {node.getRoleName()}: {node.name!r} enabled={node.getState().contains(pyatspi.STATE_ENABLED)}', flush=True)
+            try:
+                text = node.queryText().getText(0, -1)
+                if text and ('Wayland' in text or 'shortcut' in text):
+                    print(f'  text: {text!r}', flush=True)
+            except (AttributeError, LookupError, RuntimeError, NotImplementedError):
+                pass
             stack.extend(list(node))
     except (LookupError, RuntimeError, NotImplementedError):
         pass
