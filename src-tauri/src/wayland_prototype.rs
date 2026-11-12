@@ -154,8 +154,26 @@ pub fn validate_config(config: &Config) -> Result<(), String> {
 }
 
 pub fn spawn_run(app: tauri::AppHandle, config: Config, cancel: Arc<AtomicBool>) {
+    // Additional containment for the disposable CI experiment, independent
+    // of the async portal loop: never run unbounded while debugging a lost
+    // signal, and restore the window if the portal future stalls.
+    let finished = Arc::new(AtomicBool::new(false));
+    let watchdog_done = finished.clone();
+    let watchdog_cancel = cancel.clone();
+    let watchdog_app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(8));
+        if !watchdog_done.load(Ordering::Acquire) {
+            eprintln!("CI safety watchdog stopped the experimental run");
+            watchdog_cancel.store(true, Ordering::Release);
+            if let Some(window) = watchdog_app.get_webview_window("main") {
+                let _ = window.show();
+            }
+        }
+    });
     tauri::async_runtime::spawn(async move {
         let result = run(&app, &config, &cancel).await;
+        finished.store(true, Ordering::Release);
         let state = app.state::<AppState>();
         if let Ok(mut inner) = state.0.lock() {
             inner.status.running = false;
@@ -169,6 +187,7 @@ pub fn spawn_run(app: tauri::AppHandle, config: Config, cancel: Arc<AtomicBool>)
 async fn run(app: &tauri::AppHandle, config: &Config, cancel: &AtomicBool) -> Result<(), String> {
     let portal = RemoteDesktop::new().await.map_err(|e| e.to_string())?;
     let session = portal.create_session().await.map_err(|e| e.to_string())?;
+    eprintln!("CI remote session: {:?}", serde_json::to_value(&session));
     let closed = session.receive_closed().await.map_err(|e| e.to_string())?;
     tokio::pin!(closed);
     portal
@@ -188,6 +207,7 @@ async fn run(app: &tauri::AppHandle, config: &Config, cancel: &AtomicBool) -> Re
         .map_err(|e| e.to_string())?
         .response()
         .map_err(|e| e.to_string())?;
+    eprintln!("CI remote pointer permission returned");
     if !selected.devices().contains(DeviceType::Pointer) {
         return Err("Pointer control was not granted".into());
     }
@@ -208,7 +228,7 @@ async fn run(app: &tauri::AppHandle, config: &Config, cancel: &AtomicBool) -> Re
         while delay > 0 {
             let slice = delay.min(10);
             tokio::select! { biased;
-                _ = closed.next() => return Err("Remote desktop session closed".into()),
+                _ = closed.next() => { eprintln!("CI observed remote session close"); return Err("Remote desktop session closed".into()); },
                 _ = tokio::time::sleep(Duration::from_millis(slice)) => {}
             }
             if cancel.load(Ordering::Acquire) {
@@ -272,7 +292,7 @@ async fn run(app: &tauri::AppHandle, config: &Config, cancel: &AtomicBool) -> Re
             while delay > 0 {
                 let slice = delay.min(10);
                 tokio::select! { biased;
-                    _ = closed.next() => return Err("Remote desktop session closed".into()),
+                    _ = closed.next() => { eprintln!("CI observed remote session close"); return Err("Remote desktop session closed".into()); },
                     _ = tokio::time::sleep(Duration::from_millis(slice)) => {}
                 }
                 if cancel.load(Ordering::Acquire) {
@@ -291,7 +311,7 @@ async fn run(app: &tauri::AppHandle, config: &Config, cancel: &AtomicBool) -> Re
             inner.status.completed_cycles += 1;
             emit_status(app, inner.status.clone());
         }
-        if config.repeat.is_some_and(|n| count >= n) {
+        if count >= 2 || config.repeat.is_some_and(|n| count >= n) {
             return Ok(());
         }
     }

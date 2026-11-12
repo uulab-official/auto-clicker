@@ -57,6 +57,7 @@ def reply_later(sender, path, code, data):
 
 def stop_later(sender):
     def fire():
+        print(f'MOCK_SIGNAL mode={mode} shortcut={state["shortcut"]} remote={state["remote"]} sender={sender}', flush=True)
         if mode in ('stop', 'loop_stop'):
             connection.emit_signal(sender, ROOT, 'org.freedesktop.portal.GlobalShortcuts', 'Activated', GLib.Variant('(osta{sv})', (state['shortcut'], 'emergency-stop', 1, {})))
         elif mode == 'revoked':
