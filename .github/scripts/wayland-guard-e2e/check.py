@@ -33,4 +33,15 @@ while time.monotonic() < deadline:
     except OSError:
         raise SystemExit('App terminated before Wayland state could be checked')
     time.sleep(.2)
+for app in pyatspi.Registry.getDesktop(0):
+    print(f'Accessible app: pid={app.get_process_id()} name={app.name!r}', flush=True)
+    try:
+        stack = [app]
+        while stack:
+            node = stack.pop()
+            if node.name:
+                print(f'  {node.getRoleName()}: {node.name!r}', flush=True)
+            stack.extend(list(node))
+    except (LookupError, RuntimeError, NotImplementedError):
+        pass
 raise SystemExit('Wayland disabled control not found')

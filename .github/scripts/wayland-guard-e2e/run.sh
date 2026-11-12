@@ -13,5 +13,6 @@ unset DISPLAY
 weston --backend=headless-backend.so --use-pixman --socket="$WAYLAND_DISPLAY" --idle-time=0 >"$work/weston.log" 2>&1 & weston_pid=$!
 for _ in $(seq 1 30); do [[ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]] && break; kill -0 "$weston_pid"; sleep 1; done
 [[ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]] || { cat "$work/weston.log"; exit 1; }
+dbus-update-activation-environment WAYLAND_DISPLAY XDG_RUNTIME_DIR XDG_SESSION_TYPE GDK_BACKEND GTK_MODULES NO_AT_BRIDGE
 "$APP_BINARY" >"$work/app.log" 2>&1 & app_pid=$!
 /usr/bin/python3 .github/scripts/wayland-guard-e2e/check.py "$app_pid" || { cat "$work/weston.log" "$work/app.log"; exit 1; }
