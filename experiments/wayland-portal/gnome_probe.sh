@@ -32,7 +32,12 @@ for _ in $(seq 1 60); do [[ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]] && break; 
 [[ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]] || { cat "$work/shell.log"; exit 1; }
 pipewire >"$work/pipewire.log" 2>&1 & pipewire_pid=$!
 echo '--- Actual GNOME desktop portal interfaces ---'
-timeout 35s gdbus introspect --session --dest org.freedesktop.portal.Desktop --object-path /org/freedesktop/portal/desktop >"$work/interfaces" || { cat "$work/shell.log"; exit 1; }
+portal_ready=''
+for _ in $(seq 1 8); do
+  if timeout 35s gdbus introspect --session --dest org.freedesktop.portal.Desktop --object-path /org/freedesktop/portal/desktop >"$work/interfaces"; then portal_ready=1; break; fi
+  sleep 3
+done
+[[ "$portal_ready" == 1 ]] || { cat "$work/shell.log"; exit 1; }
 grep -E 'interface org.freedesktop.portal.(GlobalShortcuts|RemoteDesktop)' "$work/interfaces" || true
 echo '--- Approve actual GNOME shortcut in disposable desktop ---'
 WAYLAND_PROTOTYPE_WAIT_STOP=1 experiments/wayland-portal/target/debug/wayland-portal-prototype >"$work/probe.log" 2>&1 & probe_pid=$!

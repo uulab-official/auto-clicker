@@ -43,21 +43,65 @@ async fn probe() -> Result<()> {
     if env::var("WAYLAND_PROTOTYPE_KEYBOARD_TEST").as_deref() == Ok("1") {
         let remote = RemoteDesktop::new().await?;
         let session = remote.create_session().await?;
-        remote.select_devices(&session, DeviceType::Keyboard.into(), None, PersistMode::DoNot).await?.response()?;
+        let device_types = if env::var("WAYLAND_PROTOTYPE_WAIT_FILE").is_ok() {
+            DeviceType::Keyboard | DeviceType::Pointer
+        } else {
+            DeviceType::Keyboard.into()
+        };
+        remote
+            .select_devices(&session, device_types, None, PersistMode::DoNot)
+            .await?
+            .response()?;
         println!("Requesting isolated keyboard permission");
         let selected = remote.start(&session, None).await?.response()?;
-        if !selected.devices().contains(DeviceType::Keyboard) { return Err("Keyboard control was not granted".into()); }
+        if !selected.devices().contains(DeviceType::Keyboard) {
+            return Err("Keyboard control was not granted".into());
+        }
+        if selected.devices().contains(DeviceType::Pointer) {
+            remote.notify_pointer_motion(&session, 150.0, 150.0).await?;
+        }
+        if let Ok(marker) = env::var("WAYLAND_PROTOTYPE_WAIT_FILE") {
+            let path = Path::new(&marker);
+            if !path.starts_with(env::var("XDG_RUNTIME_DIR")?) {
+                return Err("Marker must be inside the isolated runtime".into());
+            }
+            println!("Isolated virtual keyboard ready and waiting for test marker");
+            tokio::time::timeout(Duration::from_secs(20), async {
+                while !path.exists() {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await?;
+        }
         println!("Isolated virtual keyboard granted; sending Ctrl+Shift+F8 once");
-        for key in [29, 42, 66] { remote.notify_keyboard_keycode(&session, key, KeyState::Pressed).await?; }
-        for key in [66, 42, 29] { remote.notify_keyboard_keycode(&session, key, KeyState::Released).await?; }
+        for key in [29, 42, 66] {
+            remote
+                .notify_keyboard_keycode(&session, key, KeyState::Pressed)
+                .await?;
+        }
+        for key in [66, 42, 29] {
+            remote
+                .notify_keyboard_keycode(&session, key, KeyState::Released)
+                .await?;
+        }
         tokio::time::sleep(Duration::from_secs(2)).await;
         return Ok(());
     }
     if env::var("WAYLAND_PROTOTYPE_REMOTE_PREFLIGHT").as_deref() == Ok("1") {
         let remote = RemoteDesktop::new().await?;
         let control = remote.create_session().await?;
-        remote.select_devices(&control, DeviceType::Pointer.into(), None, PersistMode::DoNot).await?.response()?;
-        println!("Requesting pointer permission from the actual portal; no pointer events will be sent");
+        remote
+            .select_devices(
+                &control,
+                DeviceType::Pointer.into(),
+                None,
+                PersistMode::DoNot,
+            )
+            .await?
+            .response()?;
+        println!(
+            "Requesting pointer permission from the actual portal; no pointer events will be sent"
+        );
         let selected = remote.start(&control, None).await?.response()?;
         println!("Actual portal returned devices: {:?}", selected.devices());
         return Ok(());
@@ -104,7 +148,8 @@ async fn probe() -> Result<()> {
     );
     if env::var("WAYLAND_PROTOTYPE_WAIT_STOP").as_deref() == Ok("1") {
         while let Some(signal) = activated.next().await {
-            if signal.session_handle().as_str() == expected_session && signal.shortcut_id() == STOP {
+            if signal.session_handle().as_str() == expected_session && signal.shortcut_id() == STOP
+            {
                 println!("ACTUAL_SHORTCUT_ACTIVATED");
                 return Ok(());
             }

@@ -160,6 +160,7 @@ struct RestoreWindow(tauri::WebviewWindow);
 impl Drop for RestoreWindow {
     fn drop(&mut self) {
         let _ = self.0.show();
+        eprintln!("CI Wayland window restore requested");
     }
 }
 
@@ -261,6 +262,7 @@ async fn run(app: &tauri::AppHandle, config: &Config, cancel: &AtomicBool) -> Re
     if window.is_visible().map_err(|e| e.to_string())? {
         return Err("Could not hide application window safely".into());
     }
+    eprintln!("CI Wayland app window hidden");
     let mut count = 0;
     let mut delay = config.start_delay_ms;
     loop {

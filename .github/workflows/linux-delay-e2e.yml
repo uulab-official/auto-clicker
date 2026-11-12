@@ -7,6 +7,25 @@ permissions:
   contents: read
 
 jobs:
+  actual_gnome_tauri:
+    needs: actual_gnome_portal_probe
+    runs-on: ubuntu-26.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install GNOME and application build dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gnome-shell gnome-control-center xdg-desktop-portal xdg-desktop-portal-gnome dbus-x11 libglib2.0-bin python3-pyatspi python3-gi gir1.2-gtk-3.0 at-spi2-core libatk-adaptor pipewire libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - run: npm ci
+      - run: npm run tauri build -- --no-bundle
+      - run: cargo build --manifest-path experiments/wayland-portal/Cargo.toml --bin wayland-portal-prototype --locked
+      - name: Verify real GNOME target click and emergency stop in isolated desktop
+        run: dbus-run-session -- bash experiments/wayland-portal/gnome_app_test.sh
   actual_gnome_portal_probe:
     runs-on: ubuntu-26.04
     timeout-minutes: 25
