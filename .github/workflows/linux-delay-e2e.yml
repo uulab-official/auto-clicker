@@ -24,10 +24,11 @@ jobs:
       - run: npm ci
       - run: npm run tauri build -- --no-bundle
       - run: cargo build --manifest-path experiments/wayland-portal/Cargo.toml --bin wayland-portal-prototype --locked
-      - name: Verify real GNOME target click and emergency stop in isolated desktop
-        run: dbus-run-session -- bash experiments/wayland-portal/gnome_app_test.sh
       - name: Verify real GNOME remote-control revocation in isolated desktop
         run: GNOME_TEST_REVOKE=1 dbus-run-session -- bash experiments/wayland-portal/gnome_app_test.sh
+      - name: Verify real GNOME target click and emergency stop in isolated desktop
+        if: ${{ !cancelled() }}
+        run: dbus-run-session -- bash experiments/wayland-portal/gnome_app_test.sh
   actual_gnome_portal_probe:
     runs-on: ubuntu-26.04
     timeout-minutes: 25

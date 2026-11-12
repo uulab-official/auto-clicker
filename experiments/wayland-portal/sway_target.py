@@ -10,6 +10,13 @@ path = sys.argv[1]
 window = Gtk.Window(title='Isolated Wayland target')
 window.fullscreen()
 window.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
+window.add_events(Gdk.EventMask.ENTER_NOTIFY_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK | Gdk.EventMask.POINTER_MOTION_MASK)
+def crossing(_window, event):
+    print(f'target pointer event={event.type.value_nick} x={event.x} y={event.y}', flush=True)
+    return False
+window.connect('enter-notify-event', crossing)
+window.connect('leave-notify-event', crossing)
+window.connect('motion-notify-event', crossing)
 window.connect('destroy', Gtk.main_quit)
 last_event = None
 

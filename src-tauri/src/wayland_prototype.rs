@@ -320,6 +320,7 @@ async fn run(app: &tauri::AppHandle, config: &Config, cancel: &AtomicBool) -> Re
                             portal.notify_pointer_button(&session, code, KeyState::Pressed),
                         )
                         .await;
+                        eprintln!("CI pointer press request returned: {press:?}");
                         let release = tokio::time::timeout(
                             Duration::from_secs(2),
                             portal.notify_pointer_button(&session, code, KeyState::Released),
