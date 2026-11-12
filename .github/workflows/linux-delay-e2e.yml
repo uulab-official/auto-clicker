@@ -17,7 +17,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends kwin-wayland xdg-desktop-portal xdg-desktop-portal-kde dbus-x11 libglib2.0-bin python3-pyatspi at-spi2-core libatk-adaptor pipewire
-      - run: cargo build --manifest-path experiments/wayland-portal/Cargo.toml --locked
+      - run: cargo build --manifest-path experiments/wayland-portal/Cargo.toml --bin wayland-portal-prototype --locked
       - name: Probe real KDE portal availability and consent UI without input
         run: dbus-run-session -- bash experiments/wayland-portal/kde_probe.sh
   verify:
