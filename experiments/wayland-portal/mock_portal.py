@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 """Mock D-Bus portal on a private CI bus; never emits real desktop input."""
 import os
+import subprocess
 import sys
 from gi.repository import Gio, GLib
 
@@ -30,6 +31,14 @@ session_info = interfaces[2]
 connection = Gio.bus_get_sync(Gio.BusType.SESSION, None)
 connection.call_sync('org.freedesktop.DBus', '/org/freedesktop/DBus', 'org.freedesktop.DBus', 'RequestName', GLib.Variant('(su)', ('org.freedesktop.portal.Desktop', 0)), GLib.VariantType.new('(u)'), Gio.DBusCallFlags.NONE, -1, None)
 state = {'shortcut': None, 'remote': None, 'sender': None}
+pointer = None
+if os.environ.get('MOCK_REAL_WAYLAND_POINTER') == '1':
+    pointer = subprocess.Popen(
+        ['experiments/wayland-portal/target/debug/sway_pointer'],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1,
+    )
+    if pointer.stdout.readline().strip() != 'POINTER_READY':
+        raise SystemExit('isolated virtual pointer did not initialize')
 
 def text(value):
     return value.unpack() if isinstance(value, GLib.Variant) else value
@@ -61,6 +70,11 @@ def method(_conn, sender, path, iface, method_name, params, invocation):
         invocation.return_value(None)
         return
     if method_name == 'NotifyPointerButton':
+        if pointer is not None:
+            pointer.stdin.write('press\n' if args[3] == 1 else 'release\n')
+            pointer.stdin.flush()
+            if pointer.stdout.readline().strip() != 'OK':
+                raise RuntimeError('isolated virtual pointer failed')
         with open(output, 'a', encoding='utf8') as out:
             out.write(f'{args[2]} {args[3]}\n')
         invocation.return_value(None)

@@ -13,8 +13,10 @@ bound trigger and the granted pointer capability and monitors both sessions for
 closure or shortcut revocation. It will send at most one click, and only on an
 explicit opt-in inside its isolated GitHub runner. The CI portal service is a
 mock: it records D-Bus button requests and never touches the compositor or real
-input. The accompanying Weston instance proves the test process is inside a
-Wayland session; it does not make the mocked portal a real compositor test.
+input. A separate headless Sway scenario connects the mock portal's pointer
+requests to a wlroots virtual pointer and a real GTK target. This tests delivery
+within an isolated compositor but the portal and shortcut activation remain
+mocks, not the real GNOME or KDE portal implementations.
 
 Open issues include stop-versus-button-call races, portal request timeouts,
 dialog parenting and cancellation, application identity for desktop portal
