@@ -7,6 +7,19 @@ permissions:
   contents: read
 
 jobs:
+  actual_gnome_portal_probe:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install isolated GNOME Shell and portal
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gnome-shell gnome-control-center xdg-desktop-portal xdg-desktop-portal-gnome dbus-x11 libglib2.0-bin python3-pyatspi at-spi2-core libatk-adaptor pipewire
+      - run: cargo build --manifest-path experiments/wayland-portal/Cargo.toml --bin wayland-portal-prototype --locked
+      - name: Probe real GNOME portals without pointer input
+        run: dbus-run-session -- bash experiments/wayland-portal/gnome_probe.sh
   actual_kde_portal_probe:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
