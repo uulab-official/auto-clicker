@@ -36,7 +36,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev xvfb
       - run: npm ci
       - run: npm run build
       - run: npm test
@@ -44,4 +44,7 @@ jobs:
         if: runner.os == 'Linux'
         run: python3 -m unittest discover -s .github/scripts/tests
       - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - name: Test X11 stacking and window manager frames
+        if: runner.os == 'Linux'
+        run: xvfb-run -a env X11_HIT_TEST_REQUIRED=1 cargo test --manifest-path src-tauri/Cargo.toml --locked overlapping_client_and_window_manager_frame -- --nocapture
       - run: npm run tauri build -- --no-bundle

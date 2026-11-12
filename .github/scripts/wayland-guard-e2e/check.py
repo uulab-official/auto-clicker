@@ -1,0 +1,59 @@
+#!/usr/bin/python3
+"""Check the unmodified app's fail-closed state on a real Wayland compositor."""
+import os
+import sys
+import time
+import pyatspi
+
+pid = int(sys.argv[1])
+deadline = time.monotonic() + 45
+while time.monotonic() < deadline:
+    for app in pyatspi.Registry.getDesktop(0):
+        try:
+            if app.get_process_id() != pid:
+                continue
+            stack = [app]
+            disabled_start = False
+            wayland_warning = False
+            while stack:
+                node = stack.pop()
+                if 'Wayland global emergency shortcuts are not supported' in (node.name or ''):
+                    wayland_warning = True
+                try:
+                    text = node.queryText()
+                    if 'Wayland global emergency shortcuts are not supported' in text.getText(0, -1):
+                        wayland_warning = True
+                except (AttributeError, LookupError, RuntimeError, NotImplementedError):
+                    pass
+                if node.name == 'Start clicking' and node.getRoleName() in ('push button', 'button'):
+                    if not node.getState().contains(pyatspi.STATE_ENABLED):
+                        disabled_start = True
+                stack.extend(list(node))
+            if disabled_start and wayland_warning:
+                print(f'Actual app {pid}: Wayland warning shown and Start clicking disabled', flush=True)
+                sys.exit(0)
+        except (LookupError, RuntimeError, NotImplementedError):
+            continue
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        raise SystemExit('App terminated before Wayland state could be checked')
+    time.sleep(.2)
+for app in pyatspi.Registry.getDesktop(0):
+    print(f'Accessible app: pid={app.get_process_id()} name={app.name!r}', flush=True)
+    try:
+        stack = [app]
+        while stack:
+            node = stack.pop()
+            if node.name:
+                print(f'  {node.getRoleName()}: {node.name!r} enabled={node.getState().contains(pyatspi.STATE_ENABLED)}', flush=True)
+            try:
+                text = node.queryText().getText(0, -1)
+                if text and ('Wayland' in text or 'shortcut' in text):
+                    print(f'  text: {text!r}', flush=True)
+            except (AttributeError, LookupError, RuntimeError, NotImplementedError):
+                pass
+            stack.extend(list(node))
+    except (LookupError, RuntimeError, NotImplementedError):
+        pass
+raise SystemExit('Wayland disabled control not found')

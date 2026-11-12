@@ -1,4 +1,6 @@
 mod engine;
+#[cfg(target_os = "linux")]
+mod x11_hit_test;
 
 use engine::{Config, MouseButton, Position, Step};
 use enigo::{Button, Coordinate, Direction, Enigo, Mouse, Settings};
@@ -349,6 +351,12 @@ fn target_over_app(app: &tauri::AppHandle, target: Option<Position>) -> bool {
     #[cfg(windows)]
     if let Some((x, y)) = point {
         if let Some(is_app) = windows_target_is_app(&window, x, y) {
+            return is_app;
+        }
+    }
+    #[cfg(target_os = "linux")]
+    if let Some((x, y)) = point {
+        if let Some(is_app) = x11_hit_test::target_is_app(&window, x, y) {
             return is_app;
         }
     }
