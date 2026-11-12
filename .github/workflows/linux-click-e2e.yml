@@ -1,47 +1,25 @@
-name: Linux isolated click and emergency stop
-
-on:
-  workflow_dispatch:
-    inputs:
-      release_tag:
-        description: Public release tag to test
-        required: true
-        default: v0.1.3
-
+name: X11 overlap regression
+on: workflow_dispatch
 permissions:
   contents: read
-
 jobs:
   verify:
     runs-on: ubuntu-22.04
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - name: Install isolated desktop dependencies
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install X11 and build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-0 libxdo3 libayatana-appindicator3-1 libfuse2 xvfb xdotool dbus-x11 at-spi2-core python3-pyatspi python3-tk libatk-adaptor
-      - name: Download and verify the published AppImage
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
-        run: |
-          set -euo pipefail
-          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          mkdir -p "$RUNNER_TEMP/published-app"
-          gh release download "$RELEASE_TAG" --pattern '*.AppImage' --dir "$RUNNER_TEMP/published-app"
-          cd "$RUNNER_TEMP/published-app"
-          shopt -s nullglob
-          files=(*.AppImage)
-          [[ ${#files[@]} == 1 ]]
-          expected=$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[] | select(.name | endswith(".AppImage")) | .digest')
-          [[ "$expected" == "sha256:$(sha256sum "${files[0]}" | cut -d' ' -f1)" ]]
-          chmod +x "${files[0]}"
-          "./${files[0]}" --appimage-extract > /dev/null
-          echo "APP_BINARY=$PWD/squashfs-root/AppRun" >> "$GITHUB_ENV"
-          echo "Verified public $RELEASE_TAG AppImage SHA256 $expected"
-      - name: Verify click and emergency stop on isolated X11
-        run: xvfb-run -a -s '-screen 0 1280x1024x24' dbus-run-session -- bash .github/scripts/linux-click-e2e/run.sh
-
-      - name: Verify finite pause and UI stop on public app
-        run: xvfb-run -a -s '-screen 0 1280x1024x24' dbus-run-session -- bash .github/scripts/public-pause-e2e/run.sh
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev xvfb xdotool dbus-x11 at-spi2-core python3-pyatspi python3-tk libatk-adaptor
+      - run: npm ci
+      - name: Test X11 topmost hit detection against Xvfb
+        run: xvfb-run -a env X11_HIT_TEST_REQUIRED=1 cargo test --manifest-path src-tauri/Cargo.toml --locked overlapping_client_and_window_manager_frame -- --nocapture
+      - run: npm run tauri build -- --no-bundle
+      - name: Test actual overlap, stop and self-protection
+        run: xvfb-run -a -s '-screen 0 1280x1024x24' dbus-run-session -- bash .github/scripts/x11-overlap-test.sh
