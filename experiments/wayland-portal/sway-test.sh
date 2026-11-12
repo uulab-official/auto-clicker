@@ -7,6 +7,7 @@ mode=${1:?click or stop}
 [[ "$mode" == click || "$mode" == stop ]] || exit 1
 work=$(mktemp -d "$RUNNER_TEMP/sway-portal.XXXXXX")
 sway_pid='' mock_pid='' target_pid=''
+trap 'cat "$work/probe.log" "$work/mock.log" "$work/target.log" "$work/sway.log" 2>/dev/null || true' ERR
 cleanup() {
   [[ -z "$mock_pid" ]] || kill "$mock_pid" 2>/dev/null || true
   [[ -z "$target_pid" ]] || kill "$target_pid" 2>/dev/null || true

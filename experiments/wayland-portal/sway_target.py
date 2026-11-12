@@ -12,7 +12,8 @@ window.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
 window.connect('destroy', Gtk.main_quit)
 
 def clicked(_window, event):
-    if event.button == 1:
+    print(f'target button={event.button} type={event.type.value_nick} time={event.time}', flush=True)
+    if event.button == 1 and event.type == Gdk.EventType.BUTTON_PRESS:
         with open(path, 'a', encoding='utf8') as out:
             out.write('click\n')
     return False
